@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.ty_cache/
+
+# pixi
+.pixi/
+pixi.lock
+
+# Generated figures
+figures/
+
+# OS
+.DS_Store

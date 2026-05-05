@@ -1,0 +1,57 @@
+[project]
+name = "sse-ssi-pmo"
+version = "0.1.0"
+description = "Probability of major outbreak under SSE and SSI branching-process models"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "matplotlib>=3.8",
+    "tqdm>=4.66",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sse_ssi_pmo"]
+
+# ---------------------------------------------------------------------------
+# pixi configuration
+# ---------------------------------------------------------------------------
+[tool.pixi.workspace]
+channels  = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+sse-ssi-pmo = { path = ".", editable = true }
+
+[tool.pixi.feature.dev.pypi-dependencies]
+ruff = "*"
+ty   = "*"
+
+[tool.pixi.environments]
+default = { features = ["dev"] }
+
+[tool.pixi.tasks]
+lint      = "ruff check src analysis"
+fmt       = "ruff format src analysis"
+typecheck = "env -u VIRTUAL_ENV ty check src analysis"
+fig1      = "python analysis/figure_1_pmo_vs_r.py"
+fig2      = "python analysis/figure_2_pmo_vs_R0.py"
+fig3      = "python analysis/figure_3_pmo_vs_k.py"
+figs      = { depends-on = ["fig1", "fig2", "fig3"] }
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+# N803/N806: lower_case argument / variable names. R0, F_r, k follow the
+# notation in notes.tex, so we keep the mathematical naming.
+ignore = ["N803", "N806"]

@@ -47,9 +47,7 @@ from sse_ssi_pmo import (
     cumulative,
     discretise_gamma,
     pmo_sse,
-    pmo_sse_sim,
     pmo_ssi,
-    pmo_ssi_sim,
 )
 
 # ---------------------------------------------------------------------------
@@ -69,26 +67,25 @@ def main() -> None:
     set_style()
 
     w = discretise_gamma(mean=SI_MEAN, sd=SI_SD, max_val=SI_MAX)
-    F = cumulative(w)
-    F_r = float(F[R_WEEKS])
+    F_r = float(cumulative(w)[R_WEEKS])  # for the title only
 
     k_vals = np.geomspace(K_MIN, K_MAX, N_POINTS)
-    pmo_sse_vals = pmo_sse(R0, k_vals, F_r)
-    pmo_ssi_vals = pmo_ssi(R0, k_vals, F_r)
+    history = np.array([1] + [0] * R_WEEKS, dtype=np.int64)
+    pmo_sse_vals = pmo_sse(R0=R0, k=k_vals, w=w, history=history, method="analytic")
+    pmo_ssi_vals = pmo_ssi(R0=R0, k=k_vals, w=w, history=history, method="analytic")
 
     sim_idx = np.linspace(0, N_POINTS - 1, SIM_SUBSET_POINTS, dtype=int)
     k_sim = k_vals[sim_idx]
-    history = np.array([1] + [0] * R_WEEKS, dtype=np.int64)
     rng = np.random.default_rng(SIM_SEED)
     sse_sim_vals = np.empty(k_sim.size, dtype=np.float64)
     ssi_sim_vals = np.empty(k_sim.size, dtype=np.float64)
     for i, k in enumerate(tqdm(k_sim, desc="fig3 sims")):
-        sse_sim_vals[i] = pmo_sse_sim(
-            R0, float(k), w, history,
+        sse_sim_vals[i] = pmo_sse(
+            R0=R0, k=float(k), w=w, history=history, method="simulation",
             n_sims=SIM_N_SSE, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
         )
-        ssi_sim_vals[i] = pmo_ssi_sim(
-            R0, float(k), w, history,
+        ssi_sim_vals[i] = pmo_ssi(
+            R0=R0, k=float(k), w=w, history=history, method="simulation",
             n_sims=SIM_N_SSI, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
             batch_size=SIM_BATCH_SSI, max_attempts=SIM_MAX_ATTEMPTS_SSI,
         )

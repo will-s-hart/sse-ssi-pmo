@@ -41,12 +41,9 @@ from analysis_defaults import (
 from tqdm.auto import tqdm
 
 from sse_ssi_pmo import (
-    cumulative,
     discretise_gamma,
     pmo_sse,
-    pmo_sse_sim,
     pmo_ssi,
-    pmo_ssi_sim,
 )
 
 # ---------------------------------------------------------------------------
@@ -64,24 +61,27 @@ def main() -> None:
     set_style()
 
     w = discretise_gamma(mean=SI_MEAN, sd=SI_SD, max_val=SI_MAX)
-    F = cumulative(w)  # F[r] = sum w_1..w_r, length SI_MAX + 1
 
     r_vals = np.arange(0, R_MAX + 1)
-    F_vals = F[r_vals]
-    pmo_sse_vals = pmo_sse(R0, K, F_vals)
-    pmo_ssi_vals = pmo_ssi(R0, K, F_vals)
-
-    rng = np.random.default_rng(SIM_SEED)
+    pmo_sse_vals = np.empty(r_vals.size, dtype=np.float64)
+    pmo_ssi_vals = np.empty(r_vals.size, dtype=np.float64)
     sse_sim_vals = np.empty(r_vals.size, dtype=np.float64)
     ssi_sim_vals = np.empty(r_vals.size, dtype=np.float64)
+    rng = np.random.default_rng(SIM_SEED)
     for i, r in enumerate(tqdm(r_vals, desc="fig1 sims")):
         history = np.array([1] + [0] * int(r), dtype=np.int64)
-        sse_sim_vals[i] = pmo_sse_sim(
-            R0, K, w, history,
+        pmo_sse_vals[i] = pmo_sse(
+            R0=R0, k=K, w=w, history=history, method="analytic",
+        )
+        pmo_ssi_vals[i] = pmo_ssi(
+            R0=R0, k=K, w=w, history=history, method="analytic",
+        )
+        sse_sim_vals[i] = pmo_sse(
+            R0=R0, k=K, w=w, history=history, method="simulation",
             n_sims=SIM_N_SSE, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
         )
-        ssi_sim_vals[i] = pmo_ssi_sim(
-            R0, K, w, history,
+        ssi_sim_vals[i] = pmo_ssi(
+            R0=R0, k=K, w=w, history=history, method="simulation",
             n_sims=SIM_N_SSI, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
             batch_size=SIM_BATCH_SSI, max_attempts=SIM_MAX_ATTEMPTS_SSI,
         )

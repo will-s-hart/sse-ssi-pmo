@@ -6,7 +6,10 @@ Public API:
   early on extinction (last ``len(w)`` time-steps all zero) or on single-step
   incidence reaching ``threshold`` (taken as the operational definition of
   "major outbreak").
-* :func:`pmo_sse_sim`, :func:`pmo_ssi_sim` — Monte-Carlo estimates of the
+
+Private API (used by :mod:`sse_ssi_pmo.pmo`):
+
+* :func:`_pmo_sse_sim`, :func:`_pmo_ssi_sim` — Monte-Carlo estimates of the
   probability of major outbreak after a given observed incidence ``history``.
   SSE seeds forward simulation with the history; SSI simulates from ``t = 0``
   and rejects sims whose first ``len(history)`` steps don't match (with
@@ -288,7 +291,7 @@ def _batch_ssi(
 # ---------------------------------------------------------------------------
 
 
-def pmo_sse_sim(
+def _pmo_sse_sim(
     R0: float,
     k: float,
     w: ArrayLike,
@@ -307,7 +310,7 @@ def pmo_sse_sim(
     (the operational definition of a "major outbreak"); the rest go extinct
     (last ``len(w)`` steps all zero).
 
-    ``show_progress`` is accepted for signature symmetry with ``pmo_ssi_sim``
+    ``show_progress`` is accepted for signature symmetry with ``_pmo_ssi_sim``
     but has no effect: the SSE batch runs in a single vectorised call.
     """
     rng = np.random.default_rng() if rng is None else rng
@@ -332,7 +335,7 @@ def pmo_sse_sim(
     return float(major.sum()) / n_resolved
 
 
-def pmo_ssi_sim(
+def _pmo_ssi_sim(
     R0: float,
     k: float,
     w: ArrayLike,
@@ -415,8 +418,6 @@ def pmo_ssi_sim(
 
 
 __all__ = [
-    "pmo_sse_sim",
-    "pmo_ssi_sim",
     "simulate_sse",
     "simulate_ssi",
 ]

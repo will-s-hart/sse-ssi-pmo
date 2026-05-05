@@ -119,84 +119,115 @@ $R_0 > 1$ there is a unique solution $q \in (0,1)$, so the probability of a
 major outbreak is $1 - q > 0$.
 
 % ---------------------------------------------------------------------------
-\subsection*{Extinction probability following 1 case on day~0,
-then \(r\) days without cases}
+\subsection*{Extinction probability after observing incidence on days 0 to \(r\)}
 % ---------------------------------------------------------------------------
 
-Suppose we observe a single case on day~0 and no new cases on days
-$1, \ldots, r$.  We compute the updated extinction probability $q_r$ for
-the residual epidemic.
+Suppose we observe incidence $I_0, I_1, \ldots, I_r$ on the first $r+1$
+days, with $I_0 \geq 1$.  We compute the updated extinction probability
+$q_r$ for the residual epidemic — the probability that the chain triggered
+by the observed cases eventually dies out.
+
+A standard branching-process argument applies in both models: each remaining
+offspring of the observed cases, once born, initiates an independent fresh
+epidemic governed by the original NB($R_0$, $k$) offspring distribution and
+goes extinct with the standard probability $q$ (the smallest fixed point of
+$G$).  The conditioning event constrains only the offspring of the observed
+cases on days $0, \ldots, r$; it does not propagate to later generations.
+Therefore
+\[
+  q_r = G_r(q),
+\]
+where $G_r$ is the pgf of the (conditional) total remaining offspring of the
+observed cases.  The two models differ in the form of $G_r$.
 
 % ---- SSE ------------------------------------------------------------------
 \subsubsection*{SSE model}
 
-Each individual infected on day~0 generates cases at lag $s$ according to
-an independent $\mathrm{NB}(\text{mean} = R_0 w_s, \text{disp} = k w_s)$
-distribution.  Observing zero cases on days $1, \ldots, r$ implies that all
-offspring at lags $s \leq r$ were zero, so only lags $s > r$ remain in play.
+In the SSE model the offspring process decomposes into independent
+contributions: each of the $I_s$ individuals infected on day $s$ generates
+a number of offspring at lag $\ell$ that is
+$\mathrm{NB}(\text{mean} = R_0 w_\ell,\;\text{disp} = k w_\ell)$,
+independently across individuals, donor days, and lags.  By the NB closure
+property under a common success probability
+$p = k w_\ell / (k w_\ell + R_0 w_\ell) = k / (k + R_0)$ (independent of
+$\ell$), the population-level $\mathrm{NB}(R_0 \lambda_t, k \lambda_t)$ law
+of $I_t$ is recovered by summing all per-individual-per-lag contributions.
 
-A crucial closure property of the NB family is that sums of independent NB
-random variables with the \emph{same success probability}
-$p = k_i/(k_i + \mu_i)$ are again NB.  Here every lag $s$ yields
-$p = kw_s/(kw_s + R_0 w_s) = k/(k + R_0)$, which is independent of $s$.
-Summing over all remaining lags, the index case's remaining offspring
-distribution is
+Conditioning on the observed counts $I_0, \ldots, I_r$ pins down only those
+contributions $(s, \ell)$ with $s + \ell \leq r$.  Per-individual-per-lag
+contributions with $s \in \{0, \ldots, r\}$ and $\ell > r - s$ are
+independent of the observations and retain their original distributions.
+The total remaining offspring of the observed cases is therefore
 \begin{equation}
-  \sum_{s=r+1}^{\infty} \mathrm{NB}(\text{mean} = R_0 w_s,\;
-  \text{disp} = k w_s)
-  = \mathrm{NB}\!\left(\text{mean} = R_0(1 - F_r),\;
-  \text{disp} = k(1 - F_r)\right),
+  \sum_{s=0}^{r} \sum_{i=1}^{I_s} \sum_{\ell = r-s+1}^{\infty}
+  \mathrm{NB}(\text{mean} = R_0 w_\ell,\;\text{disp} = k w_\ell)
+  = \mathrm{NB}(\text{mean} = R_0 \Lambda,\;\text{disp} = k \Lambda),
 \end{equation}
-with pgf $G_r(s) = \bigl(1 + (R_0/k)(1-s)\bigr)^{-k(1-F_r)} = G(s)^{1-F_r}$.
-Each such remaining offspring, once born, initiates an independent epidemic
-governed by the original NB($R_0$, $k$) offspring distribution, and so goes
-extinct with the standard probability $q$ (the smallest fixed point of $G$).
-The conditioning event constrains only the index case's offspring at lags
-$\le r$ — it does not propagate to later generations — so
+where the pooled effective weight is
 \begin{equation}
-  q_r = G_r(q)
-  = \left(1 + \frac{R_0}{k}(1 - q)\right)^{-k(1 - F_r)}
-  = q^{\,1 - F_r}.
+  \Lambda \;=\; \sum_{s=0}^{r} I_s\,(1 - F_{r-s}).
 \end{equation}
-As $r \to \infty$, $F_r \to 1$ and $q_r \to 1$: each additional day without
-cases raises the extinction probability towards certainty.
+With the convention $F_0 = 0$, the $s = r$ term enters with full weight,
+since none of its offspring have had a chance to appear yet.
+
+The pgf is
+$G_r(s) = \bigl(1 + (R_0/k)(1-s)\bigr)^{-k\Lambda} = G(s)^{\Lambda}$, so
+\begin{equation}
+  q_r \;=\; G_r(q) \;=\; q^{\Lambda}
+  \;=\; q^{\,\sum_{s=0}^{r} I_s\,(1 - F_{r-s})}.
+\end{equation}
+The earlier special case (a single case on day~0 followed by $r$ days
+without cases) corresponds to $I_0 = 1$, $I_1 = \cdots = I_r = 0$, giving
+$\Lambda = 1 - F_r$ and recovering $q_r = q^{1 - F_r}$.  In the same
+direction, as the zero streak extends ($r \to \infty$) the contributions
+$I_s\,(1-F_{r-s})$ all vanish and $q_r \to 1$: extinction approaches
+certainty.
 
 % ---- SSI ------------------------------------------------------------------
-\subsubsection*{SSI model}
+\subsubsection*{SSI model: cases on day 0 only}
 
-It is more natural here to work with the latent infectivity of the index
-case.  Let $y$ denote the realised infectivity of the single case on day~0,
-with prior
+For the SSI model a closed-form update is available only in the special
+case where all observed cases occur on day~0; that is, $I_0 \geq 1$ and
+$I_1 = \cdots = I_r = 0$.  We treat this case here and discuss the general
+situation at the end of the section.
+
+Let $y$ denote the realised aggregate infectivity of the $I_0$ index cases
+on day~0, with prior
 \begin{equation}
-  y \sim \mathrm{Gamma}(k,\, k), \qquad \mathbb{E}[y] = 1.
+  y \sim \mathrm{Gamma}(k I_0,\, k), \qquad \mathbb{E}[y] = I_0.
 \end{equation}
-Conditional on $y$, infections at each lag $s$ are independent with
+A key observation is that $I_s = 0$ on day $s$ forces $Y_s = 0$, since
+$Y_s \mid I_s \sim \mathrm{Gamma}(k I_s, k)$ collapses to a point mass at $0$
+when $I_s = 0$.  Conditioning on $I_1 = \cdots = I_r = 0$ thus eliminates
+the day-$1$ through day-$(r-1)$ contributions to later infections, and so
 \begin{equation}
-  I_s \mid y \;\sim\; \mathrm{Poisson}(R_0\, w_s\, y).
+  I_d \mid y,\; Y_1 = \cdots = Y_{d-1} = 0
+  \;\sim\; \mathrm{Poisson}(R_0\, w_d\, y),
+  \qquad d = 1, \ldots, r,
 \end{equation}
-Since $y$ is unobserved, we update its distribution given the zero
-observations before computing the offspring distribution.
+with the $I_d$ conditionally independent given $y$.
 
-\paragraph{Step 1: posterior update given no cases on days \(1,\dots,r\).}
+\paragraph{Step 1: posterior update given no cases on days \(1, \ldots, r\).}
 
-By Bayes' theorem, with the $I_s$ conditionally independent Poisson given $y$,
+By Bayes' theorem,
 \begin{align}
   f(y \mid I_1 = \cdots = I_r = 0)
   &\propto f(y)\;\mathbb{P}(I_1 = \cdots = I_r = 0 \mid y) \notag\\
-  &= \frac{k^k}{\Gamma(k)}\, y^{k-1} e^{-ky}
-  \prod_{s=1}^r e^{-R_0 w_s y} \notag\\
-  &= \frac{k^k}{\Gamma(k)}\, y^{k-1}
-  \exp\!\left(-y\Bigl[k + R_0 \sum_{s=1}^r w_s\Bigr]\right) \notag\\
-  &= \frac{k^k}{\Gamma(k)}\, y^{k-1}\, e^{-(k + R_0 F_r)\,y}.
+  &= \frac{k^{k I_0}}{\Gamma(k I_0)}\, y^{k I_0 - 1} e^{-k y}
+  \prod_{d=1}^r e^{-R_0 w_d y} \notag\\
+  &= \frac{k^{k I_0}}{\Gamma(k I_0)}\, y^{k I_0 - 1}
+  \exp\!\left(-y \Bigl[k + R_0 \sum_{d=1}^r w_d\Bigr]\right) \notag\\
+  &= \frac{k^{k I_0}}{\Gamma(k I_0)}\, y^{k I_0 - 1}\,
+  e^{-(k + R_0 F_r)\, y}.
 \end{align}
-This is proportional to a $\mathrm{Gamma}(k,\; k + R_0 F_r)$ density, so
+This is proportional to a $\mathrm{Gamma}(k I_0,\; k + R_0 F_r)$ density, so
 \begin{equation}
   y \mid (I_1 = \cdots = I_r = 0)
-  \;\sim\; \mathrm{Gamma}(k,\; k + R_0 F_r).
+  \;\sim\; \mathrm{Gamma}(k I_0,\; k + R_0 F_r).
 \end{equation}
 The posterior rate $k + R_0 F_r > k$ reflects the fact that observing no
-early transmission is evidence that $y$ is small: the index case is likely
-a low-infectivity individual.
+early transmission is evidence that $y$ is small: the index cohort is
+likely a low-infectivity one.
 
 \paragraph{Step 2: marginal offspring distribution for lags \(s > r\).}
 
@@ -206,45 +237,52 @@ Given $y$, the total remaining offspring is
   \;=\; \sum_{s=r+1}^{\infty} I_s
   \;\sim\; \mathrm{Poisson}\!\left(R_0(1 - F_r)\,y\right).
 \end{equation}
-To marginalise over the posterior, set $\lambda = R_0(1 - F_r)\,y$.  Since
-$y \sim \mathrm{Gamma}(k,\; k + R_0 F_r)$, the scaling property
-($cX \sim \mathrm{Gamma}(\alpha, \beta/c)$ for $X \sim
-\mathrm{Gamma}(\alpha, \beta)$)
-gives
+Setting $\lambda = R_0(1 - F_r)\,y$, the Gamma scaling property
+($cX \sim \mathrm{Gamma}(\alpha, \beta/c)$ for $X \sim \mathrm{Gamma}(\alpha,
+\beta)$) gives
 \begin{equation}
   \lambda \;\sim\;
-  \mathrm{Gamma}\!\left(k,\;\frac{k + R_0 F_r}{R_0(1 - F_r)}\right).
+  \mathrm{Gamma}\!\left(k I_0,\;\frac{k + R_0 F_r}{R_0(1 - F_r)}\right),
 \end{equation}
-The \emph{Poisson--Gamma mixture identity} states that if
-$X \mid \lambda \sim \mathrm{Poisson}(\lambda)$ and
-$\lambda \sim \mathrm{Gamma}(\alpha, \beta)$, then marginally
-$X \sim \mathrm{NB}(\text{size} = \alpha, \text{mean} = \alpha/\beta)$.
-Applying this,
-\begin{align}
-  I_{\mathrm{rem}}
-  &\;\sim\;
-  \mathrm{NB}\!\left(\text{size} = k,\;
-  \text{mean} = k \cdot \frac{R_0(1 - F_r)}{k + R_0 F_r}\right).
-\end{align}
-Compared to the unconditional mean $R_0(1-F_r)$, the effective mean is
-reduced by the factor
+and the Poisson--Gamma mixture identity yields
 \begin{equation}
-  \frac{k}{k + R_0 F_r} \;<\; 1,
+  I_{\mathrm{rem}}
+  \;\sim\;
+  \mathrm{NB}\!\left(\text{size} = k I_0,\;
+  \text{mean} = k I_0 \cdot \frac{R_0(1 - F_r)}{k + R_0 F_r}\right).
 \end{equation}
-which arises entirely from the Bayesian update: the zero streak tells us the
-index case probably has low infectivity.
+The effective per-individual mean $R_0(1-F_r)/(1 + R_0 F_r/k)$ is reduced
+relative to the unconditional $R_0(1-F_r)$ by the same Bayesian-update
+factor as in the $I_0 = 1$ case.
 
 \paragraph{Step 3: extinction probability.}
 
-Let $G_r$ denote the pgf of $I_{\mathrm{rem}}$. Each remaining offspring,
-once born, initiates an independent epidemic with a fresh latent infectivity
-drawn from the prior $\mathrm{Gamma}(k, k)$, so it is governed by the
-original NB($R_0$, $k$) offspring distribution and goes extinct with the
-standard probability $q$. The conditioning constrains only the index case's
-own offspring counts, not those of later generations, hence
+Each remaining offspring, once born, initiates an independent fresh epidemic
+with infectivity drawn from the prior $\mathrm{Gamma}(k, k)$, so it is
+governed by the original NB($R_0$, $k$) offspring distribution and goes
+extinct with the standard probability $q$.  Hence
 \begin{equation}
-  q_r = G_r(q) =
-  \left(1 + \frac{R_0(1 - F_r)}{k + R_0 F_r}(1 - q)\right)^{-k}.
+  q_r \;=\; G_r(q) \;=\;
+  \left(1 + \frac{R_0(1 - F_r)}{k + R_0 F_r}(1 - q)\right)^{-k I_0}.
 \end{equation}
+For $I_0 = 1$ this reduces to the previous formula.
+
+\paragraph{General histories.}
+
+The argument above hinges on the fact that, when $I_1 = \cdots = I_r = 0$,
+the only non-trivial latent quantity is $Y_0$: the zero observations force
+$Y_1 = \cdots = Y_{r-1} = 0$, leaving the joint likelihood
+$\mathbb{P}(I_1 = \cdots = I_r = 0 \mid Y_0)$ a Gamma-conjugate function of
+$Y_0$ alone.  When at least one observed $I_d > 0$ for $d \in \{1, \ldots,
+r\}$, the day-$d$ rate involves $R_0 \sum_{s=1}^{d-1} w_{d-s} Y_s$ — a sum
+of latent infectivities — so the joint posterior of $(Y_0, \ldots, Y_{r-1})$
+is no longer a product of independent Gammas, and the marginal offspring
+distribution does not admit a closed form.
+
+\begin{remark}
+  For general observed histories $(I_0, \ldots, I_r)$, we plan to estimate
+  the SSI extinction probability by MCMC over the latent infectivities
+  $(Y_0, \ldots, Y_{r-1})$.  This extension is deferred.
+\end{remark}
 
 \end{document}

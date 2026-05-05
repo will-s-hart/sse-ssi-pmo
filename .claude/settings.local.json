@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pixi run *)"
+      "Bash(pixi run *)",
+      "Read(//Users/user/Documents/Git_repos/sse-ssi-pmo-pmo-refactor/src/sse_ssi_pmo/**)",
+      "Read(//Users/user/Documents/Git_repos/sse-ssi-pmo-pmo-refactor/analysis/**)",
+      "Bash(cd /Users/user/Documents/Git_repos/sse-ssi-pmo-pmo-refactor && pixi run python -c \" *)",
+      "Read(//Users/user/Documents/Git_repos/sse-ssi-pmo-pmo-refactor/**)"
+    ],
+    "additionalDirectories": [
+      "/Users/user/Documents/Git_repos/sse-ssi-pmo-pmo-refactor/src/sse_ssi_pmo",
+      "/Users/user/Documents/Git_repos/sse-ssi-pmo-pmo-refactor/analysis"
     ]
   }
 }

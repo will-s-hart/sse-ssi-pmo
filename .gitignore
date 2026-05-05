@@ -15,3 +15,5 @@ figures/
 
 # OS
 .DS_Store
+
+.claude/

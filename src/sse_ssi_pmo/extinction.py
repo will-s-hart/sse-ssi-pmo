@@ -73,9 +73,7 @@ def _q_array(
     return q, R0_b, k_b
 
 
-def _lambda_from_history(
-    w: NDArray[np.float64], history: NDArray[np.int64]
-) -> float:
+def _lambda_from_history(w: NDArray[np.float64], history: NDArray[np.int64]) -> float:
     """Pooled effective weight ``Lambda = sum_{s=0..r} I_s (1 - F_{r-s})``.
 
     Indices ``r - s`` exceeding the support of ``w`` are clipped to

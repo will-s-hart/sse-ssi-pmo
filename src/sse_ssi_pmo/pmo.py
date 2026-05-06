@@ -127,16 +127,13 @@ def pmo_sse(
     if method == "analytic":
         if kwargs:
             raise TypeError(
-                f"pmo_sse(method='analytic') got unexpected keyword arguments: "
-                f"{sorted(kwargs)}"
+                f"pmo_sse(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
         out = _pmo_sse_analytic(R0, k, w_arr, hist_arr)
     elif method == "simulation":
         out = _dispatch(_pmo_sse_sim, R0, k, w_arr, hist_arr, "pmo_sse", kwargs)
     else:
-        raise ValueError(
-            f"pmo_sse: method must be 'analytic' or 'simulation', got {method!r}"
-        )
+        raise ValueError(f"pmo_sse: method must be 'analytic' or 'simulation', got {method!r}")
 
     if scalar_inputs:
         return float(np.asarray(out).reshape(()))
@@ -184,8 +181,7 @@ def pmo_ssi(
     if method == "analytic":
         if kwargs:
             raise TypeError(
-                f"pmo_ssi(method='analytic') got unexpected keyword arguments: "
-                f"{sorted(kwargs)}"
+                f"pmo_ssi(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
         nonzero_after_day0 = np.flatnonzero(hist_arr[1:] != 0)
         if nonzero_after_day0.size > 0:
@@ -207,8 +203,7 @@ def pmo_ssi(
         out = _dispatch(_pmo_ssi_mcmc, R0, k, w_arr, hist_arr, "pmo_ssi_mcmc", kwargs)
     else:
         raise ValueError(
-            "pmo_ssi: method must be 'analytic', 'simulation', or 'mcmc', "
-            f"got {method!r}"
+            f"pmo_ssi: method must be 'analytic', 'simulation', or 'mcmc', got {method!r}"
         )
 
     if scalar_inputs:

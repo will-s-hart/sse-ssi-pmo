@@ -39,9 +39,7 @@ from tqdm.auto import tqdm
 # ---------------------------------------------------------------------------
 
 
-def _check_inputs(
-    R0: float, k: float, w: NDArray[np.float64], threshold: int, t_max: int
-) -> None:
+def _check_inputs(R0: float, k: float, w: NDArray[np.float64], threshold: int, t_max: int) -> None:
     if R0 <= 0.0 or k <= 0.0:
         raise ValueError("R0 and k must be positive")
     if w.ndim != 1 or w.size == 0:

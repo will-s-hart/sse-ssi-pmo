@@ -155,9 +155,7 @@ def fit_ssi(
 
         # Full FOI vector: dot mult_matrix columns for non-zero-incidence days
         # with the corresponding latent infectivities.
-        foi_vec = pm.math.dot(
-            mult_matrix[:, nonzero_incidence_idx], infectivity_rv
-        )
+        foi_vec = pm.math.dot(mult_matrix[:, nonzero_incidence_idx], infectivity_rv)
 
         # rep_no_vec is a length-t_stop vector; trivially constant for now but
         # structured for easy extension to time-varying R0.

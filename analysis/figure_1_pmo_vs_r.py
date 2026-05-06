@@ -71,33 +71,68 @@ def main() -> None:
     for i, r in enumerate(tqdm(r_vals, desc="fig1 sims")):
         history = np.array([1] + [0] * int(r), dtype=np.int64)
         pmo_sse_vals[i] = pmo_sse(
-            R0=R0, k=K, w=w, history=history, method="analytic",
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="analytic",
         )
         pmo_ssi_vals[i] = pmo_ssi(
-            R0=R0, k=K, w=w, history=history, method="analytic",
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="analytic",
         )
         sse_sim_vals[i] = pmo_sse(
-            R0=R0, k=K, w=w, history=history, method="simulation",
-            n_sims=SIM_N_SSE, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="simulation",
+            n_sims=SIM_N_SSE,
+            threshold=SIM_THRESHOLD,
+            t_max=SIM_T_MAX,
+            rng=rng,
         )
         ssi_sim_vals[i] = pmo_ssi(
-            R0=R0, k=K, w=w, history=history, method="simulation",
-            n_sims=SIM_N_SSI, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
-            batch_size=SIM_BATCH_SSI, max_attempts=SIM_MAX_ATTEMPTS_SSI,
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="simulation",
+            n_sims=SIM_N_SSI,
+            threshold=SIM_THRESHOLD,
+            t_max=SIM_T_MAX,
+            rng=rng,
+            batch_size=SIM_BATCH_SSI,
+            max_attempts=SIM_MAX_ATTEMPTS_SSI,
         )
 
     fig, ax = plt.subplots()
     ax.plot(r_vals, pmo_sse_vals, color=SSE_COLOUR, label=SSE_LABEL, linestyle=SSE_LINESTYLE)
     ax.plot(r_vals, pmo_ssi_vals, color=SSI_COLOUR, label=SSI_LABEL, linestyle=SSI_LINESTYLE)
     ax.scatter(
-        r_vals, sse_sim_vals,
-        color=SSE_COLOUR, marker=SSE_SIM_MARKER, s=SIM_MARKERSIZE**2, zorder=3,
-        edgecolors="white", linewidths=0.6, label=SSE_LABEL + SIM_LABEL_SUFFIX,
+        r_vals,
+        sse_sim_vals,
+        color=SSE_COLOUR,
+        marker=SSE_SIM_MARKER,
+        s=SIM_MARKERSIZE**2,
+        zorder=3,
+        edgecolors="white",
+        linewidths=0.6,
+        label=SSE_LABEL + SIM_LABEL_SUFFIX,
     )
     ax.scatter(
-        r_vals, ssi_sim_vals,
-        color=SSI_COLOUR, marker=SSI_SIM_MARKER, s=SIM_MARKERSIZE**2, zorder=3,
-        edgecolors="white", linewidths=0.6, label=SSI_LABEL + SIM_LABEL_SUFFIX,
+        r_vals,
+        ssi_sim_vals,
+        color=SSI_COLOUR,
+        marker=SSI_SIM_MARKER,
+        s=SIM_MARKERSIZE**2,
+        zorder=3,
+        edgecolors="white",
+        linewidths=0.6,
+        label=SSI_LABEL + SIM_LABEL_SUFFIX,
     )
     ax.set_xlabel("Weeks without cases since index case ($r$)")
     ax.set_ylabel("Probability of major outbreak")

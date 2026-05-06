@@ -8,6 +8,8 @@ dependencies = [
     "scipy>=1.13",
     "matplotlib>=3.8",
     "tqdm>=4.66",
+    "pymc>=5.0",
+    "arviz>=0.19",
 ]
 
 [build-system]
@@ -21,27 +23,31 @@ packages = ["src/sse_ssi_pmo"]
 # pixi configuration
 # ---------------------------------------------------------------------------
 [tool.pixi.workspace]
-channels  = ["conda-forge"]
+channels = ["conda-forge"]
 platforms = ["osx-arm64"]
+
+[tool.pixi.dependencies]
+pymc = ">=5.0"
+arviz = ">=0.19"
 
 [tool.pixi.pypi-dependencies]
 sse-ssi-pmo = { path = ".", editable = true }
 
 [tool.pixi.feature.dev.pypi-dependencies]
 ruff = "*"
-ty   = "*"
+ty = "*"
 
 [tool.pixi.environments]
 default = { features = ["dev"] }
 
 [tool.pixi.tasks]
-lint      = "ruff check src analysis"
-fmt       = "ruff format src analysis"
+lint = "ruff check src analysis"
+fmt = "ruff format src analysis"
 typecheck = "env -u VIRTUAL_ENV ty check src analysis"
-fig1      = "python analysis/figure_1_pmo_vs_r.py"
-fig2      = "python analysis/figure_2_pmo_vs_R0.py"
-fig3      = "python analysis/figure_3_pmo_vs_k.py"
-figs      = { depends-on = ["fig1", "fig2", "fig3"] }
+fig1 = "python analysis/figure_1_pmo_vs_r.py"
+fig2 = "python analysis/figure_2_pmo_vs_R0.py"
+fig3 = "python analysis/figure_3_pmo_vs_k.py"
+figs = { depends-on = ["fig1", "fig2", "fig3"] }
 
 # ---------------------------------------------------------------------------
 # ruff

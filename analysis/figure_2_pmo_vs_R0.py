@@ -81,27 +81,54 @@ def main() -> None:
     ssi_sim_vals = np.empty(R0_sim.size, dtype=np.float64)
     for i, R0 in enumerate(tqdm(R0_sim, desc="fig2 sims")):
         sse_sim_vals[i] = pmo_sse(
-            R0=float(R0), k=K, w=w, history=history, method="simulation",
-            n_sims=SIM_N_SSE, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
+            R0=float(R0),
+            k=K,
+            w=w,
+            history=history,
+            method="simulation",
+            n_sims=SIM_N_SSE,
+            threshold=SIM_THRESHOLD,
+            t_max=SIM_T_MAX,
+            rng=rng,
         )
         ssi_sim_vals[i] = pmo_ssi(
-            R0=float(R0), k=K, w=w, history=history, method="simulation",
-            n_sims=SIM_N_SSI, threshold=SIM_THRESHOLD, t_max=SIM_T_MAX, rng=rng,
-            batch_size=SIM_BATCH_SSI, max_attempts=SIM_MAX_ATTEMPTS_SSI,
+            R0=float(R0),
+            k=K,
+            w=w,
+            history=history,
+            method="simulation",
+            n_sims=SIM_N_SSI,
+            threshold=SIM_THRESHOLD,
+            t_max=SIM_T_MAX,
+            rng=rng,
+            batch_size=SIM_BATCH_SSI,
+            max_attempts=SIM_MAX_ATTEMPTS_SSI,
         )
 
     fig, ax = plt.subplots()
     ax.plot(R0_vals, pmo_sse_vals, color=SSE_COLOUR, label=SSE_LABEL, linestyle=SSE_LINESTYLE)
     ax.plot(R0_vals, pmo_ssi_vals, color=SSI_COLOUR, label=SSI_LABEL, linestyle=SSI_LINESTYLE)
     ax.scatter(
-        R0_sim, sse_sim_vals,
-        color=SSE_COLOUR, marker=SSE_SIM_MARKER, s=SIM_MARKERSIZE**2, zorder=3,
-        edgecolors="white", linewidths=0.6, label=SSE_LABEL + SIM_LABEL_SUFFIX,
+        R0_sim,
+        sse_sim_vals,
+        color=SSE_COLOUR,
+        marker=SSE_SIM_MARKER,
+        s=SIM_MARKERSIZE**2,
+        zorder=3,
+        edgecolors="white",
+        linewidths=0.6,
+        label=SSE_LABEL + SIM_LABEL_SUFFIX,
     )
     ax.scatter(
-        R0_sim, ssi_sim_vals,
-        color=SSI_COLOUR, marker=SSI_SIM_MARKER, s=SIM_MARKERSIZE**2, zorder=3,
-        edgecolors="white", linewidths=0.6, label=SSI_LABEL + SIM_LABEL_SUFFIX,
+        R0_sim,
+        ssi_sim_vals,
+        color=SSI_COLOUR,
+        marker=SSI_SIM_MARKER,
+        s=SIM_MARKERSIZE**2,
+        zorder=3,
+        edgecolors="white",
+        linewidths=0.6,
+        label=SSI_LABEL + SIM_LABEL_SUFFIX,
     )
     ax.set_xlabel(r"Reproduction number $R_0$")
     ax.set_ylabel("Probability of major outbreak")

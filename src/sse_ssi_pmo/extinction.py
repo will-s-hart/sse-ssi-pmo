@@ -73,9 +73,7 @@ def _q_array(
     return q, R0_b, k_b
 
 
-def _lambda_from_history(
-    w: NDArray[np.float64], history: NDArray[np.int64]
-) -> float:
+def _lambda_from_history(w: NDArray[np.float64], history: NDArray[np.int64]) -> float:
     """Pooled effective weight ``Lambda = sum_{s=0..r} I_s (1 - F_{r-s})``.
 
     Indices ``r - s`` exceeding the support of ``w`` are clipped to
@@ -102,6 +100,61 @@ def _pmo_sse_analytic(
     Lambda = _lambda_from_history(w, history)
     q, _, _ = _q_array(R0, k)
     return 1.0 - q**Lambda
+
+
+def _pmo_ssi_mcmc(
+    R0: float,
+    k: float,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+    show_progress: bool = False,
+    **mcmc_kwargs,
+) -> float:
+    """SSI PMO for a general history, estimated via MCMC over latent infectivities.
+
+    Samples $(Y_s)_{s=0}^r$ from their posterior given the observed history,
+    then averages ``exp(R0 * Lambda * (q - 1))`` over draws, where
+    ``Lambda = sum_s Y_s * (1 - F_{r-s})``.  See ``notes/notes.tex`` for the
+    derivation.
+
+    ``mcmc_kwargs`` are forwarded to ``pm.sample`` (e.g. ``draws``, ``tune``,
+    ``chains``, ``thin``).
+    """
+    from sse_ssi_pmo.inference import fit_ssi
+
+    thin = mcmc_kwargs.pop("thin", 1)
+    mcmc_kwargs.setdefault("progressbar", show_progress)
+    datatree = fit_ssi(
+        history,
+        w,
+        R0=R0,
+        k=k,
+        thin=thin,
+        **mcmc_kwargs,
+    )
+
+    # Posterior infectivity samples: shape (chain, draw, n_nonzero).
+    Y_nonzero_samples = datatree["posterior"].ds["infectivity"].values
+    n_nonzero = Y_nonzero_samples.shape[-1]
+    Y_nonzero_flat = Y_nonzero_samples.reshape(-1, n_nonzero)  # (n_samples, n_nonzero)
+
+    # Reconstruct full Y array including zeros for zero-incidence days.
+    r = history.size - 1
+    nonzero_idx = np.flatnonzero(history > 0)
+    n_samples = Y_nonzero_flat.shape[0]
+    Y_full = np.zeros((n_samples, r + 1), dtype=np.float64)
+    Y_full[:, nonzero_idx] = Y_nonzero_flat
+
+    # Weights: (1 - F_{r-s}) for s = 0, ..., r.
+    F = cumulative(w)
+    idx = np.minimum(r - np.arange(r + 1), F.size - 1)
+    weights = 1.0 - F[idx]  # shape (r+1,)
+
+    Lambda_samples = Y_full @ weights  # shape (n_samples,)
+
+    q = _nb_extinction_prob(R0, k)
+    q_r = float(np.mean(np.exp(R0 * Lambda_samples * (q - 1.0))))
+    return 1.0 - q_r
 
 
 def _pmo_ssi_analytic_special(

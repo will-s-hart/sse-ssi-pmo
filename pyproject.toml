@@ -8,6 +8,8 @@ dependencies = [
     "scipy>=1.13",
     "matplotlib>=3.8",
     "tqdm>=4.66",
+    "pymc>=5.0",
+    "arviz>=0.19",
 ]
 
 [build-system]
@@ -23,6 +25,10 @@ packages = ["src/sse_ssi_pmo"]
 [tool.pixi.workspace]
 channels  = ["conda-forge"]
 platforms = ["osx-arm64"]
+
+[tool.pixi.dependencies]
+pymc   = ">=5.0"
+arviz  = ">=0.19"
 
 [tool.pixi.pypi-dependencies]
 sse-ssi-pmo = { path = ".", editable = true }

@@ -16,4 +16,5 @@ figures/
 # OS
 .DS_Store
 
+# Claude
 .claude/

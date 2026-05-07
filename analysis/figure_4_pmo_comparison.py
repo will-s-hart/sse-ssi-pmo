@@ -1,7 +1,7 @@
 """Figure 4: PMO comparison across incidence histories.
 
 Grouped bar chart showing SSE (analytic) and SSI (analytic when possible,
-MCMC otherwise) PMO estimates as bars, with simulation × markers overlaid, for
+MCMC otherwise) PMO estimates as bars, with simulation x markers overlaid, for
 a configurable list of incidence histories.  Confirms agreement between methods
 across a variety of observed histories, including cases with non-zero incidence
 after day 0 where SSI requires MCMC.

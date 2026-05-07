@@ -335,4 +335,138 @@ where $\Lambda^{(m)} = \sum_{s=0}^r Y_s^{(m)}(1-F_{r-s})$.
   which matches the closed-form result in equation~(11).
 \end{remark}
 
+% ---------------------------------------------------------------------------
+\section*{Probability of major outbreak under model uncertainty}
+% ---------------------------------------------------------------------------
+
+So far we have computed the probability of a major outbreak conditional on a
+chosen model (SSE or SSI).  In practice the underlying mechanism generating
+overdispersion is unknown, and we may wish to combine the two via Bayesian
+model averaging.  Let $\pi_\mathrm{SSE}, \pi_\mathrm{SSI} \in [0,1]$ with
+$\pi_\mathrm{SSE} + \pi_\mathrm{SSI} = 1$ be prior probabilities on the two
+models.  Given the observed history $(I_0, \ldots, I_r)$, Bayes' theorem
+yields posterior model probabilities
+\begin{equation}
+  \pi_M^\star
+  \;=\; \frac{\pi_M\, L_M}{\pi_\mathrm{SSE}\, L_\mathrm{SSE}
+              + \pi_\mathrm{SSI}\, L_\mathrm{SSI}},
+  \qquad
+  L_M \;=\; \mathbb{P}_M(I_1, \ldots, I_r \mid I_0),
+  \qquad M \in \{\mathrm{SSE}, \mathrm{SSI}\}.
+\end{equation}
+The model-averaged probability of a major outbreak is then
+\begin{equation}
+  \mathrm{PMO}_\mathrm{avg}
+  \;=\; \pi_\mathrm{SSE}^\star \cdot \mathrm{PMO}_\mathrm{SSE}
+    + \pi_\mathrm{SSI}^\star \cdot \mathrm{PMO}_\mathrm{SSI},
+\end{equation}
+where $\mathrm{PMO}_M = 1 - q_r^M$ as derived above.
+
+\subsection*{Likelihood of the observed history}
+
+\paragraph{SSE model.}  Conditional on past incidence, the day-$t$ count
+satisfies $I_t \mid I_{<t} \sim \mathrm{NB}(\text{mean} = R_0 \lambda_t,
+\text{disp} = k \lambda_t)$ with
+$\lambda_t = \sum_{s=1}^{t-1} w_{t-s} I_s$, so the joint likelihood
+factorises into a product of negative-binomial pmfs,
+\[
+  L_\mathrm{SSE}(I_1, \ldots, I_r \mid I_0)
+  \;=\; \prod_{t=1}^r \mathrm{NB}\!\bigl(I_t;\, R_0 \lambda_t,\, k\lambda_t\bigr).
+\]
+This closed form is straightforward to compute for any history; we restrict
+attention to the day-0-only special case below for the analytic
+implementation.
+
+\paragraph{SSI model.}  The likelihood involves the latent infectivities
+$(Y_s)_{s=0}^{r-1}$ and is in general not available in closed form.  For the
+special case $I_1 = \cdots = I_r = 0$ a closed form follows directly from
+the Gamma moment-generating function (below); for general histories an
+importance-sampling estimate using draws from the posterior
+$p(Y_{0:r-1} \mid I_{0:r})$ produced by the MCMC sampler of the previous
+section is feasible but is not implemented here.
+
+\subsection*{Closed form for cases on day 0 only}
+
+Take $I_0 \geq 1$ and $I_1 = \cdots = I_r = 0$.
+
+For the SSE model, $I_t \sim \mathrm{NB}(R_0 I_0 w_t,\, k I_0 w_t)$
+independently across $t = 1, \ldots, r$.  The probability that all are zero
+factorises as
+\begin{equation}
+  L_\mathrm{SSE}
+  \;=\; \prod_{t=1}^r
+    \left(\frac{k I_0 w_t}{k I_0 w_t + R_0 I_0 w_t}\right)^{k I_0 w_t}
+   \;=\; \left(\frac{k}{k + R_0}\right)^{k I_0 F_r}
+   \;=\; \left(1 + \frac{R_0}{k}\right)^{-k I_0 F_r}.
+\end{equation}
+
+For the SSI model, conditional on $Y_0 \sim \mathrm{Gamma}(k I_0, k)$ the
+day-$t$ count is independently $\mathrm{Poisson}(R_0 w_t Y_0)$ for $t = 1,
+\ldots, r$, so
+$\mathbb{P}(I_1 = \cdots = I_r = 0 \mid Y_0) = \exp(-R_0 F_r Y_0)$.
+Marginalising via the Gamma MGF gives
+\begin{equation}
+  L_\mathrm{SSI}
+  \;=\; \mathbb{E}\!\left[\exp(-R_0 F_r Y_0)\right]
+  \;=\; \left(1 + \frac{R_0 F_r}{k}\right)^{-k I_0}.
+\end{equation}
+
+Both likelihoods share the same functional shape but with different
+exponents: the SSE exponent $k I_0 F_r$ is reduced by the factor $F_r \leq
+1$ relative to the SSI exponent $k I_0$, reflecting the fact that the SSE
+total over days $1,\ldots,r$ has dispersion $k I_0 F_r$ whereas the SSI
+total has dispersion $k I_0$.  Combining with the per-model PMOs from
+earlier sections gives
+\begin{equation}
+  \mathrm{PMO}_\mathrm{avg}
+  \;=\; \pi_\mathrm{SSE}^\star\,\bigl(1 - q^{I_0(1 - F_r)}\bigr)
+       + \pi_\mathrm{SSI}^\star\,\left[
+         1 - \left(1 + \frac{R_0(1 - F_r)}{k + R_0 F_r}(1-q)\right)^{-k I_0}
+       \right].
+\end{equation}
+
+\begin{remark}
+  When $r = 0$ (no observations after day~0) we have $F_r = 0$ and
+  $L_\mathrm{SSE} = L_\mathrm{SSI} = 1$, so the posterior reduces to the
+  prior and the model-averaged PMO is just the prior-weighted average of
+  the two per-model PMOs.
+\end{remark}
+
+\subsection*{Simulation-based estimator}
+
+For general histories, where the SSI likelihood is unavailable in closed
+form, we use a rejection-sampling estimator that simultaneously realises the
+posterior model weighting.  Repeat the following in batches of size $b$:
+
+\begin{enumerate}
+\item Draw the per-batch model split as a Binomial:
+  $b_\mathrm{SSE} \sim \mathrm{Bin}(b, \pi_\mathrm{SSE})$ and
+  $b_\mathrm{SSI} = b - b_\mathrm{SSE}$.
+\item Run $b_\mathrm{SSE}$ vectorised SSE forward simulations from $t=0$
+  seeded with $I_0$ index cases, retaining only those whose simulated
+  incidence on days $1, \ldots, r$ exactly matches the observed
+  $I_1, \ldots, I_r$.  Likewise for $b_\mathrm{SSI}$ SSI simulations.
+\item For each retained simulation, continue forward until either the
+  single-step incidence reaches the major-outbreak threshold (resolved as
+  ``major'') or the most recent $L = \mathrm{len}(w)$ steps are all zero
+  (resolved as ``extinct'').
+\end{enumerate}
+
+Continue accumulating batches until a target number of resolved-and-matching
+simulations is reached.  The acceptance rate of model $M$'s simulations is
+$L_M$ in expectation; with a Binomial split by prior, the expected number
+of accepted $M$-sims is proportional to $\pi_M L_M$, so the composition of
+the accepted pool matches the posterior $\pi_M^\star$.  The pooled estimator
+\begin{equation}
+  \widehat{\mathrm{PMO}}_\mathrm{avg}
+  \;=\; \frac{N_\mathrm{SSE}^{\mathrm{maj}} + N_\mathrm{SSI}^{\mathrm{maj}}}
+            {N_\mathrm{SSE}^{\mathrm{acc}} + N_\mathrm{SSI}^{\mathrm{acc}}}
+  \;=\; \widehat{\pi}_\mathrm{SSE}^\star\,\widehat{\mathrm{PMO}}_\mathrm{SSE}
+       + \widehat{\pi}_\mathrm{SSI}^\star\,\widehat{\mathrm{PMO}}_\mathrm{SSI}
+\end{equation}
+follows immediately, where $\widehat{\pi}_M^\star = N_M^{\mathrm{acc}} /
+(N_\mathrm{SSE}^{\mathrm{acc}} + N_\mathrm{SSI}^{\mathrm{acc}})$ is the
+implied posterior estimate and $\widehat{\mathrm{PMO}}_M = N_M^{\mathrm{maj}}
+/ N_M^{\mathrm{acc}}$ is the per-model PMO from the accepted $M$-sims.
+
 \end{document}

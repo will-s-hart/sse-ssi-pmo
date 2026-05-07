@@ -175,3 +175,64 @@ def _pmo_ssi_analytic_special(
     q, R0_b, k_b = _q_array(R0, k)
     eff = R0_b * (1.0 - F_r) / (k_b + R0_b * F_r)
     return 1.0 - (1.0 + eff * (1.0 - q)) ** (-k_b * I_0)
+
+
+def _pmo_uncertain_analytic_special(
+    R0: ArrayLike,
+    k: ArrayLike,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+    prior_sse: float,
+) -> dict[str, NDArray[np.float64]]:
+    """Model-averaged PMO for the day-0-only history (cases on day 0, then zeros).
+
+    Both per-model PMOs and the data likelihoods are available in closed form:
+
+    .. math::
+
+        L_\\mathrm{SSE} = (1 + R_0/k)^{-k I_0 F_r},
+        \\qquad
+        L_\\mathrm{SSI} = (1 + R_0 F_r / k)^{-k I_0}.
+
+    Posterior model probabilities follow from Bayes' theorem and the
+    model-averaged PMO is the posterior-weighted sum of the per-model PMOs.
+    See ``notes/notes.tex`` for the derivation.
+
+    Returns a dict with keys ``pmo``, ``posterior_sse``, ``pmo_sse``,
+    ``pmo_ssi``; each value broadcasts over ``(R0, k)``. The caller is
+    responsible for verifying ``history`` has the day-0-only shape.
+    """
+    if not 0.0 <= prior_sse <= 1.0:
+        raise ValueError("prior_sse must lie in [0, 1]")
+
+    I_0 = int(history[0])
+    r = history.size - 1
+    F = cumulative(w)
+    F_r = float(F[min(r, F.size - 1)])
+
+    pmo_sse_arr = _pmo_sse_analytic(R0, k, w, history)
+    pmo_ssi_arr = _pmo_ssi_analytic_special(R0, k, I_0, F_r)
+
+    R0_b, k_b = np.broadcast_arrays(
+        np.asarray(R0, dtype=np.float64), np.asarray(k, dtype=np.float64)
+    )
+    log_L_sse = -k_b * I_0 * F_r * np.log1p(R0_b / k_b)
+    log_L_ssi = -k_b * I_0 * np.log1p(R0_b * F_r / k_b)
+
+    # Posterior via log-sum-exp; tolerate prior_sse = 0 or 1 (log -> -inf).
+    with np.errstate(divide="ignore"):
+        log_prior_sse = np.log(prior_sse)
+        log_prior_ssi = np.log1p(-prior_sse)
+    a_sse = log_prior_sse + log_L_sse
+    a_ssi = log_prior_ssi + log_L_ssi
+    a_max = np.maximum(a_sse, a_ssi)
+    log_norm = a_max + np.log(np.exp(a_sse - a_max) + np.exp(a_ssi - a_max))
+    posterior_sse = np.exp(a_sse - log_norm)
+
+    pmo = posterior_sse * pmo_sse_arr + (1.0 - posterior_sse) * pmo_ssi_arr
+    return {
+        "pmo": pmo,
+        "posterior_sse": posterior_sse,
+        "pmo_sse": pmo_sse_arr,
+        "pmo_ssi": pmo_ssi_arr,
+    }

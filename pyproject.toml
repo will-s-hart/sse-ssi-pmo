@@ -47,7 +47,9 @@ typecheck = "env -u VIRTUAL_ENV ty check src analysis"
 fig1 = "python analysis/figure_1_pmo_vs_r.py"
 fig2 = "python analysis/figure_2_pmo_vs_R0.py"
 fig3 = "python analysis/figure_3_pmo_vs_k.py"
-figs = { depends-on = ["fig1", "fig2", "fig3"] }
+fig4 = "python analysis/figure_4_pmo_comparison.py"
+fig5 = "python analysis/figure_5_pmo_uncertain.py"
+figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5"] }
 
 # ---------------------------------------------------------------------------
 # ruff

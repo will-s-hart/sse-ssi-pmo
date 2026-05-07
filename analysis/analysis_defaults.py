@@ -29,6 +29,7 @@ SIM_SUBSET_POINTS: int = 20  # # of param values to overlay sims on for figs 2/3
 SIM_SEED: int = 20260506
 
 OUT_DIR: Path = Path(__file__).resolve().parents[1] / "figures"
+RESULTS_DIR: Path = Path(__file__).resolve().parents[1] / "results"
 
 # --- figure 4 (PMO comparison across histories) ---
 FIG4_HISTORIES: list[list[int]] = [

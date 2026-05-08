@@ -1,8 +1,9 @@
 """Figure 5: Model-averaged PMO across incidence histories.
 
-Grouped bar chart with three bars per history — SSE, SSI, and the Bayesian
-model-averaged PMO from ``pmo_uncertain``.  Each bar shows the
-analytic/MCMC value, with simulation x markers overlaid as a cross-check.
+Grouped bar chart with three analytic bars per history — SSE, SSI, and the
+Bayesian model-averaged PMO from ``pmo_uncertain``.  Simulation x markers
+are overlaid for all three bars as one cross-check; open-circle MCMC
+markers are overlaid at the SSI bar position as a second cross-check.
 The posterior probability of SSE (from ``pmo_uncertain``) is annotated
 below each cluster, illustrating how the data shifts the prior.
 
@@ -54,16 +55,16 @@ def main() -> None:
 
     ax.bar(
         x - bar_width,
-        df["sse_best"],
+        df["sse_analytic"],
         width=bar_width,
         color=SSE_COLOUR,
         alpha=0.85,
         label=SSE_LABEL,
     )
-    ax.bar(x, df["ssi_best"], width=bar_width, color=SSI_COLOUR, alpha=0.85, label=SSI_LABEL)
+    ax.bar(x, df["ssi_analytic"], width=bar_width, color=SSI_COLOUR, alpha=0.85, label=SSI_LABEL)
     ax.bar(
         x + bar_width,
-        df["uncertain_best"],
+        df["uncertain_analytic"],
         width=bar_width,
         color=UNCERTAIN_COLOUR,
         alpha=0.9,
@@ -90,6 +91,17 @@ def main() -> None:
         linewidths=1.5,
         zorder=3,
         label=SSI_LABEL + SIM_LABEL_SUFFIX,
+    )
+    ax.scatter(
+        x,
+        df["ssi_mcmc"],
+        facecolors="none",
+        edgecolors=SSI_COLOUR,
+        marker="o",
+        s=sim_marker_size,
+        linewidths=1.5,
+        zorder=3,
+        label=SSI_LABEL + " (MCMC)",
     )
     ax.scatter(
         x + bar_width,

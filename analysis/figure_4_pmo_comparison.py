@@ -1,10 +1,9 @@
 """Figure 4: PMO comparison across incidence histories.
 
-Grouped bar chart showing SSE (analytic) and SSI (analytic when possible,
-MCMC otherwise) PMO estimates as bars, with simulation x markers overlaid, for
-a configurable list of incidence histories.  Confirms agreement between methods
-across a variety of observed histories, including cases with non-zero incidence
-after day 0 where SSI requires MCMC.
+Grouped bar chart with SSE and SSI analytic PMOs as bars (the SSI analytic
+formula now covers histories with cases on day 0 and at most two later
+days), simulation x markers overlaid as a cross-check, and open-circle
+MCMC markers overlaid at the SSI bar position as a second cross-check.
 
 Loads pre-computed results from results/fig4_pmo_comparison.csv (run
 results_4_pmo_comparison.py first).
@@ -57,11 +56,11 @@ def main() -> None:
     )
     ax.bar(
         x + bar_width / 2,
-        df["ssi_best"],
+        df["ssi_analytic"],
         width=bar_width,
         color=SSI_COLOUR,
         alpha=0.85,
-        label=SSI_LABEL + " (analytic / MCMC)",
+        label=SSI_LABEL,
     )
 
     sim_marker_size = (SIM_MARKERSIZE * 2) ** 2
@@ -84,6 +83,17 @@ def main() -> None:
         linewidths=1.5,
         zorder=3,
         label=SSI_LABEL + SIM_LABEL_SUFFIX,
+    )
+    ax.scatter(
+        x + bar_width / 2,
+        df["ssi_mcmc"],
+        facecolors="none",
+        edgecolors=SSI_COLOUR,
+        marker="o",
+        s=sim_marker_size,
+        linewidths=1.5,
+        zorder=3,
+        label=SSI_LABEL + " (MCMC)",
     )
 
     ax.set_xticks(x)

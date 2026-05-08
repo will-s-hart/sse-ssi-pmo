@@ -42,17 +42,14 @@ MCMC_TUNE: int = FIG4_MCMC_TUNE
 MCMC_CHAINS: int = FIG4_MCMC_CHAINS
 
 
-def _ssi_analytic_applicable(history: list[int]) -> bool:
-    return all(x == 0 for x in history[1:])
-
-
 def main() -> None:
     w = discretise_gamma(mean=SI_MEAN, sd=SI_SD, max_val=SI_MAX)
     rng = np.random.default_rng(SIM_SEED)
 
     n = len(HISTORIES)
     sse_analytic = np.empty(n)
-    ssi_best = np.empty(n)
+    ssi_analytic = np.empty(n)
+    ssi_mcmc = np.empty(n)
     sse_sim = np.empty(n)
     ssi_sim = np.empty(n)
 
@@ -60,22 +57,19 @@ def main() -> None:
         history = np.array(hist, dtype=np.int64)
 
         sse_analytic[i] = pmo_sse(R0=R0, k=K, w=w, history=history, method="analytic")
-
-        if _ssi_analytic_applicable(hist):
-            ssi_best[i] = pmo_ssi(R0=R0, k=K, w=w, history=history, method="analytic")
-        else:
-            ssi_best[i] = pmo_ssi(
-                R0=R0,
-                k=K,
-                w=w,
-                history=history,
-                method="mcmc",
-                draws=MCMC_DRAWS,
-                tune=MCMC_TUNE,
-                chains=MCMC_CHAINS,
-                target_accept=0.99,
-                progressbar=False,
-            )
+        ssi_analytic[i] = pmo_ssi(R0=R0, k=K, w=w, history=history, method="analytic")
+        ssi_mcmc[i] = pmo_ssi(
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="mcmc",
+            draws=MCMC_DRAWS,
+            tune=MCMC_TUNE,
+            chains=MCMC_CHAINS,
+            target_accept=0.99,
+            progressbar=False,
+        )
 
         sse_sim[i] = pmo_sse(
             R0=R0,
@@ -108,7 +102,8 @@ def main() -> None:
         {
             "history": [str(h) for h in HISTORIES],
             "sse_analytic": sse_analytic,
-            "ssi_best": ssi_best,
+            "ssi_analytic": ssi_analytic,
+            "ssi_mcmc": ssi_mcmc,
             "sse_sim": sse_sim,
             "ssi_sim": ssi_sim,
         }

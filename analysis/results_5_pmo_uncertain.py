@@ -48,18 +48,15 @@ MCMC_TUNE: int = FIG4_MCMC_TUNE
 MCMC_CHAINS: int = FIG4_MCMC_CHAINS
 
 
-def _ssi_analytic_applicable(history: list[int]) -> bool:
-    return all(x == 0 for x in history[1:])
-
-
 def main() -> None:
     w = discretise_gamma(mean=SI_MEAN, sd=SI_SD, max_val=SI_MAX)
     rng = np.random.default_rng(SIM_SEED)
 
     n = len(HISTORIES)
-    sse_best = np.empty(n)
-    ssi_best = np.empty(n)
-    uncertain_best = np.empty(n)
+    sse_analytic = np.empty(n)
+    ssi_analytic = np.empty(n)
+    ssi_mcmc = np.empty(n)
+    uncertain_analytic = np.empty(n)
     sse_sim = np.empty(n)
     ssi_sim = np.empty(n)
     uncertain_sim = np.empty(n)
@@ -67,46 +64,26 @@ def main() -> None:
 
     for i, hist in enumerate(tqdm(HISTORIES, desc="fig5 histories")):
         history = np.array(hist, dtype=np.int64)
-        day0_only = _ssi_analytic_applicable(hist)
 
-        sse_best[i] = pmo_sse(R0=R0, k=K, w=w, history=history, method="analytic")
-
-        if day0_only:
-            ssi_best[i] = pmo_ssi(R0=R0, k=K, w=w, history=history, method="analytic")
-            analytic_result = pmo_uncertain(
-                R0=R0, k=K, w=w, history=history, method="analytic", prior_sse=PRIOR_SSE
-            )
-            uncertain_best[i] = analytic_result.pmo
-            posterior_sse[i] = analytic_result.posterior_sse
-        else:
-            ssi_best[i] = pmo_ssi(
-                R0=R0,
-                k=K,
-                w=w,
-                history=history,
-                method="mcmc",
-                draws=MCMC_DRAWS,
-                tune=MCMC_TUNE,
-                chains=MCMC_CHAINS,
-                target_accept=0.99,
-                progressbar=False,
-            )
-            sim_result = pmo_uncertain(
-                R0=R0,
-                k=K,
-                w=w,
-                history=history,
-                method="simulation",
-                prior_sse=PRIOR_SSE,
-                n_sims=FIG5_SIM_N,
-                threshold=SIM_THRESHOLD,
-                t_max=SIM_T_MAX,
-                rng=rng,
-                batch_size=FIG5_SIM_BATCH,
-                max_attempts=FIG5_SIM_MAX_ATTEMPTS,
-            )
-            uncertain_best[i] = sim_result.pmo
-            posterior_sse[i] = sim_result.posterior_sse
+        sse_analytic[i] = pmo_sse(R0=R0, k=K, w=w, history=history, method="analytic")
+        ssi_analytic[i] = pmo_ssi(R0=R0, k=K, w=w, history=history, method="analytic")
+        ssi_mcmc[i] = pmo_ssi(
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="mcmc",
+            draws=MCMC_DRAWS,
+            tune=MCMC_TUNE,
+            chains=MCMC_CHAINS,
+            target_accept=0.99,
+            progressbar=False,
+        )
+        analytic_result = pmo_uncertain(
+            R0=R0, k=K, w=w, history=history, method="analytic", prior_sse=PRIOR_SSE
+        )
+        uncertain_analytic[i] = analytic_result.pmo
+        posterior_sse[i] = analytic_result.posterior_sse
 
         sse_sim[i] = pmo_sse(
             R0=R0,
@@ -152,9 +129,10 @@ def main() -> None:
     df = pd.DataFrame(
         {
             "history": [str(h) for h in HISTORIES],
-            "sse_best": sse_best,
-            "ssi_best": ssi_best,
-            "uncertain_best": uncertain_best,
+            "sse_analytic": sse_analytic,
+            "ssi_analytic": ssi_analytic,
+            "ssi_mcmc": ssi_mcmc,
+            "uncertain_analytic": uncertain_analytic,
             "sse_sim": sse_sim,
             "ssi_sim": ssi_sim,
             "uncertain_sim": uncertain_sim,

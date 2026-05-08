@@ -8,7 +8,8 @@
 \begin{document}
 
 % ---------------------------------------------------------------------------
-\section*{Two stochastic epidemic models}
+\section{Two stochastic epidemic models}
+\label{sec:models}
 % ---------------------------------------------------------------------------
 
 We consider two discrete-time, branching-process models for the spread of
@@ -50,7 +51,8 @@ distribution converges to a Poisson.
 \end{remark}
 
 % ---------------------------------------------------------------------------
-\section*{SSE model (Superspreading Events)}
+\section{SSE model (Superspreading Events)}
+\label{sec:sse}
 % ---------------------------------------------------------------------------
 
 In the \emph{superspreading-events} (SSE) model, the force of infection on
@@ -70,7 +72,8 @@ variance by the factor $1 + R_t \lambda_t / k$, capturing superspreading at
 the population level.
 
 % ---------------------------------------------------------------------------
-\section*{SSI model (Superspreading Individuals)}
+\section{SSI model (Superspreading Individuals)}
+\label{sec:ssi}
 % ---------------------------------------------------------------------------
 
 In the \emph{superspreading individuals} (SSI) model, heterogeneity
@@ -99,7 +102,8 @@ process driven by past infectivity,
 \end{remark}
 
 % ---------------------------------------------------------------------------
-\section*{Extinction probability}
+\section{Extinction probability}
+\label{sec:extinction}
 % ---------------------------------------------------------------------------
 
 Henceforth assume the reproduction number is constant, $R_t = R_0$.  We
@@ -119,7 +123,8 @@ $R_0 > 1$ there is a unique solution $q \in (0,1)$, so the probability of a
 major outbreak is $1 - q > 0$.
 
 % ---------------------------------------------------------------------------
-\subsection*{Extinction probability after observing incidence on days 0 to \(r\)}
+\subsection{Extinction probability after observing incidence on days 0 to \(r\)}
+\label{sec:qr}
 % ---------------------------------------------------------------------------
 
 Suppose we observe incidence $I_0, I_1, \ldots, I_r$ on the first $r+1$
@@ -141,7 +146,8 @@ where $G_r$ is the pgf of the (conditional) total remaining offspring of the
 observed cases.  The two models differ in the form of $G_r$.
 
 % ---- SSE ------------------------------------------------------------------
-\subsubsection*{SSE model}
+\subsubsection{SSE model}
+\label{sec:qr_sse}
 
 In the SSE model the offspring process decomposes into independent
 contributions: each of the $I_s$ individuals infected on day $s$ generates
@@ -184,97 +190,17 @@ $I_s\,(1-F_{r-s})$ all vanish and $q_r \to 1$: extinction approaches
 certainty.
 
 % ---- SSI ------------------------------------------------------------------
-\subsubsection*{SSI model: cases on day 0 only}
+\subsubsection{SSI model}
+\label{sec:qr_ssi}
 
-For the SSI model a closed-form update is available only in the special
-case where all observed cases occur on day~0; that is, $I_0 \geq 1$ and
-$I_1 = \cdots = I_r = 0$.  We treat this case here and discuss the general
-situation at the end of the section.
-
-Let $y$ denote the realised aggregate infectivity of the $I_0$ index cases
-on day~0, with prior
-\begin{equation}
-  y \sim \mathrm{Gamma}(k I_0,\, k), \qquad \mathbb{E}[y] = I_0.
-\end{equation}
-A key observation is that $I_s = 0$ on day $s$ forces $Y_s = 0$, since
-$Y_s \mid I_s \sim \mathrm{Gamma}(k I_s, k)$ collapses to a point mass at $0$
-when $I_s = 0$.  Conditioning on $I_1 = \cdots = I_r = 0$ thus eliminates
-the day-$1$ through day-$(r-1)$ contributions to later infections, and so
-\begin{equation}
-  I_d \mid y,\; Y_1 = \cdots = Y_{d-1} = 0
-  \;\sim\; \mathrm{Poisson}(R_0\, w_d\, y),
-  \qquad d = 1, \ldots, r,
-\end{equation}
-with the $I_d$ conditionally independent given $y$.
-
-\paragraph{Step 1: posterior update given no cases on days \(1, \ldots, r\).}
-
-By Bayes' theorem,
-\begin{align}
-  f(y \mid I_1 = \cdots = I_r = 0)
-  &\propto f(y)\;\mathbb{P}(I_1 = \cdots = I_r = 0 \mid y) \notag\\
-  &= \frac{k^{k I_0}}{\Gamma(k I_0)}\, y^{k I_0 - 1} e^{-k y}
-  \prod_{d=1}^r e^{-R_0 w_d y} \notag\\
-  &= \frac{k^{k I_0}}{\Gamma(k I_0)}\, y^{k I_0 - 1}
-  \exp\!\left(-y \Bigl[k + R_0 \sum_{d=1}^r w_d\Bigr]\right) \notag\\
-  &= \frac{k^{k I_0}}{\Gamma(k I_0)}\, y^{k I_0 - 1}\,
-  e^{-(k + R_0 F_r)\, y}.
-\end{align}
-This is proportional to a $\mathrm{Gamma}(k I_0,\; k + R_0 F_r)$ density, so
-\begin{equation}
-  y \mid (I_1 = \cdots = I_r = 0)
-  \;\sim\; \mathrm{Gamma}(k I_0,\; k + R_0 F_r).
-\end{equation}
-The posterior rate $k + R_0 F_r > k$ reflects the fact that observing no
-early transmission is evidence that $y$ is small: the index cohort is
-likely a low-infectivity one.
-
-\paragraph{Step 2: marginal offspring distribution for lags \(s > r\).}
-
-Given $y$, the total remaining offspring is
-\begin{equation}
-  I_{\mathrm{rem}} \mid y
-  \;=\; \sum_{s=r+1}^{\infty} I_s
-  \;\sim\; \mathrm{Poisson}\!\left(R_0(1 - F_r)\,y\right).
-\end{equation}
-Setting $\lambda = R_0(1 - F_r)\,y$, the Gamma scaling property
-($cX \sim \mathrm{Gamma}(\alpha, \beta/c)$ for $X \sim \mathrm{Gamma}(\alpha,
-\beta)$) gives
-\begin{equation}
-  \lambda \;\sim\;
-  \mathrm{Gamma}\!\left(k I_0,\;\frac{k + R_0 F_r}{R_0(1 - F_r)}\right),
-\end{equation}
-and the Poisson--Gamma mixture identity yields
-\begin{equation}
-  I_{\mathrm{rem}}
-  \;\sim\;
-  \mathrm{NB}\!\left(\text{size} = k I_0,\;
-  \text{mean} = k I_0 \cdot \frac{R_0(1 - F_r)}{k + R_0 F_r}\right).
-\end{equation}
-The effective per-individual mean $R_0(1-F_r)/(1 + R_0 F_r/k)$ is reduced
-relative to the unconditional $R_0(1-F_r)$ by the same Bayesian-update
-factor as in the $I_0 = 1$ case.
-
-\paragraph{Step 3: extinction probability.}
-
-Each remaining offspring, once born, initiates an independent fresh epidemic
-with infectivity drawn from the prior $\mathrm{Gamma}(k, k)$, so it is
-governed by the original NB($R_0$, $k$) offspring distribution and goes
-extinct with the standard probability $q$.  Hence
-\begin{equation}
-  q_r \;=\; G_r(q) \;=\;
-  \left(1 + \frac{R_0(1 - F_r)}{k + R_0 F_r}(1 - q)\right)^{-k I_0}.
-\end{equation}
-For $I_0 = 1$ this reduces to the previous formula.
-
-% ---- SSI general histories -----------------------------------------------
-\subsubsection*{SSI model: general histories (MCMC)}
-
-When at least one $I_d > 0$ for $d \in \{1, \ldots, r\}$, the day-$d$ rate
-involves $R_0\sum_{s=1}^{d-1}w_{d-s}Y_s$ — a sum of latent infectivities —
-so the joint posterior of $(Y_0,\ldots,Y_{r-1})$ is no longer a product of
-independent Gammas and the marginal offspring distribution does not admit a
-closed form.  We therefore estimate $q_r$ by MCMC.
+For the SSI model the joint posterior of $(Y_0,\ldots,Y_{r-1})$ is in
+general not available in closed form: as soon as $I_d > 0$ on at least
+one day $d \in \{1, \ldots, r\}$, the day-$d$ rate
+$R_0 \sum_{s=1}^{d-1} w_{d-s} Y_s$ couples the latents.  We therefore
+present an MCMC estimator of $q_r$ here as the canonical SSI workflow.
+For the special cases of cases on day~$0$ only, on day~$0$ and one
+later day, and on day~$0$ and two later days, closed forms are however
+available; these are deferred to \S~\ref{sec:ssi_closed_forms} below.
 
 \paragraph{MCMC posterior.}
 
@@ -332,11 +258,12 @@ where $\Lambda^{(m)} = \sum_{s=0}^r Y_s^{(m)}(1-F_{r-s})$.
     = \left(1 - \frac{R_0(1-F_r)(q-1)}{k+R_0 F_r}\right)^{-kI_0}
     = \left(1 + \frac{R_0(1-F_r)}{k+R_0 F_r}(1-q)\right)^{-kI_0},
   \]
-  which matches the closed-form result in equation~(11).
+  which matches the closed-form result \eqref{eq:qr_case_i}.
 \end{remark}
 
 % ---------------------------------------------------------------------------
-\section*{Probability of major outbreak under model uncertainty}
+\section{Probability of major outbreak under model uncertainty}
+\label{sec:pmo_uncertain}
 % ---------------------------------------------------------------------------
 
 So far we have computed the probability of a major outbreak conditional on a
@@ -349,7 +276,7 @@ yields posterior model probabilities
 \begin{equation}
   \pi_M^\star
   \;=\; \frac{\pi_M\, L_M}{\pi_\mathrm{SSE}\, L_\mathrm{SSE}
-              + \pi_\mathrm{SSI}\, L_\mathrm{SSI}},
+  + \pi_\mathrm{SSI}\, L_\mathrm{SSI}},
   \qquad
   L_M \;=\; \mathbb{P}_M(I_1, \ldots, I_r \mid I_0),
   \qquad M \in \{\mathrm{SSE}, \mathrm{SSI}\}.
@@ -358,98 +285,54 @@ The model-averaged probability of a major outbreak is then
 \begin{equation}
   \mathrm{PMO}_\mathrm{avg}
   \;=\; \pi_\mathrm{SSE}^\star \cdot \mathrm{PMO}_\mathrm{SSE}
-    + \pi_\mathrm{SSI}^\star \cdot \mathrm{PMO}_\mathrm{SSI},
+  + \pi_\mathrm{SSI}^\star \cdot \mathrm{PMO}_\mathrm{SSI},
 \end{equation}
 where $\mathrm{PMO}_M = 1 - q_r^M$ as derived above.
 
-\subsection*{Likelihood of the observed history}
+\subsection{Likelihood of the observed history}
+\label{sec:likelihood}
 
 \paragraph{SSE model.}  Conditional on past incidence, the day-$t$ count
 satisfies $I_t \mid I_{<t} \sim \mathrm{NB}(\text{mean} = R_0 \lambda_t,
 \text{disp} = k \lambda_t)$ with
 $\lambda_t = \sum_{s=1}^{t-1} w_{t-s} I_s$, so the joint likelihood
 factorises into a product of negative-binomial pmfs,
-\[
+\begin{equation}\label{eq:L_sse_general}
   L_\mathrm{SSE}(I_1, \ldots, I_r \mid I_0)
-  \;=\; \prod_{t=1}^r \mathrm{NB}\!\bigl(I_t;\, R_0 \lambda_t,\, k\lambda_t\bigr).
-\]
-This closed form is straightforward to compute for any history; we restrict
-attention to the day-0-only special case below for the analytic
-implementation.
+  \;=\; \prod_{t=1}^r \mathrm{NB}\!\bigl(I_t;\, R_0 \lambda_t,\,
+  k\lambda_t\bigr).
+\end{equation}
+This closed form is available for any history.
 
 \paragraph{SSI model.}  The likelihood involves the latent infectivities
-$(Y_s)_{s=0}^{r-1}$ and is in general not available in closed form.  For the
-special case $I_1 = \cdots = I_r = 0$ a closed form follows directly from
-the Gamma moment-generating function (below); for general histories an
-importance-sampling estimate using draws from the posterior
-$p(Y_{0:r-1} \mid I_{0:r})$ produced by the MCMC sampler of the previous
-section is feasible but is not implemented here.
+$(Y_s)_{s=0}^{r-1}$ and is in general not available in closed form.
+For genuinely general histories, an importance-sampling estimate using
+draws from the posterior $p(Y_{0:r-1} \mid I_{0:r})$ produced by the
+MCMC sampler of the previous section is feasible but is not
+implemented here.  Closed forms are however available in the same
+three special cases as for $q_r$ (cases on day~$0$ only, on day~$0$
+and one later day, on day~$0$ and two later days); these are derived
+in \S~\ref{sec:ssi_closed_forms} below.
 
-\subsection*{Closed form for cases on day 0 only}
-
-Take $I_0 \geq 1$ and $I_1 = \cdots = I_r = 0$.
-
-For the SSE model, $I_t \sim \mathrm{NB}(R_0 I_0 w_t,\, k I_0 w_t)$
-independently across $t = 1, \ldots, r$.  The probability that all are zero
-factorises as
-\begin{equation}
-  L_\mathrm{SSE}
-  \;=\; \prod_{t=1}^r
-    \left(\frac{k I_0 w_t}{k I_0 w_t + R_0 I_0 w_t}\right)^{k I_0 w_t}
-   \;=\; \left(\frac{k}{k + R_0}\right)^{k I_0 F_r}
-   \;=\; \left(1 + \frac{R_0}{k}\right)^{-k I_0 F_r}.
-\end{equation}
-
-For the SSI model, conditional on $Y_0 \sim \mathrm{Gamma}(k I_0, k)$ the
-day-$t$ count is independently $\mathrm{Poisson}(R_0 w_t Y_0)$ for $t = 1,
-\ldots, r$, so
-$\mathbb{P}(I_1 = \cdots = I_r = 0 \mid Y_0) = \exp(-R_0 F_r Y_0)$.
-Marginalising via the Gamma MGF gives
-\begin{equation}
-  L_\mathrm{SSI}
-  \;=\; \mathbb{E}\!\left[\exp(-R_0 F_r Y_0)\right]
-  \;=\; \left(1 + \frac{R_0 F_r}{k}\right)^{-k I_0}.
-\end{equation}
-
-Both likelihoods share the same functional shape but with different
-exponents: the SSE exponent $k I_0 F_r$ is reduced by the factor $F_r \leq
-1$ relative to the SSI exponent $k I_0$, reflecting the fact that the SSE
-total over days $1,\ldots,r$ has dispersion $k I_0 F_r$ whereas the SSI
-total has dispersion $k I_0$.  Combining with the per-model PMOs from
-earlier sections gives
-\begin{equation}
-  \mathrm{PMO}_\mathrm{avg}
-  \;=\; \pi_\mathrm{SSE}^\star\,\bigl(1 - q^{I_0(1 - F_r)}\bigr)
-       + \pi_\mathrm{SSI}^\star\,\left[
-         1 - \left(1 + \frac{R_0(1 - F_r)}{k + R_0 F_r}(1-q)\right)^{-k I_0}
-       \right].
-\end{equation}
-
-\begin{remark}
-  When $r = 0$ (no observations after day~0) we have $F_r = 0$ and
-  $L_\mathrm{SSE} = L_\mathrm{SSI} = 1$, so the posterior reduces to the
-  prior and the model-averaged PMO is just the prior-weighted average of
-  the two per-model PMOs.
-\end{remark}
-
-\subsection*{Simulation-based estimator}
+\subsection{Simulation-based estimator}
+\label{sec:simulation}
 
 For general histories, where the SSI likelihood is unavailable in closed
 form, we use a rejection-sampling estimator that simultaneously realises the
 posterior model weighting.  Repeat the following in batches of size $b$:
 
 \begin{enumerate}
-\item Draw the per-batch model split as a Binomial:
-  $b_\mathrm{SSE} \sim \mathrm{Bin}(b, \pi_\mathrm{SSE})$ and
-  $b_\mathrm{SSI} = b - b_\mathrm{SSE}$.
-\item Run $b_\mathrm{SSE}$ vectorised SSE forward simulations from $t=0$
-  seeded with $I_0$ index cases, retaining only those whose simulated
-  incidence on days $1, \ldots, r$ exactly matches the observed
-  $I_1, \ldots, I_r$.  Likewise for $b_\mathrm{SSI}$ SSI simulations.
-\item For each retained simulation, continue forward until either the
-  single-step incidence reaches the major-outbreak threshold (resolved as
-  ``major'') or the most recent $L = \mathrm{len}(w)$ steps are all zero
-  (resolved as ``extinct'').
+  \item Draw the per-batch model split as a Binomial:
+    $b_\mathrm{SSE} \sim \mathrm{Bin}(b, \pi_\mathrm{SSE})$ and
+    $b_\mathrm{SSI} = b - b_\mathrm{SSE}$.
+  \item Run $b_\mathrm{SSE}$ vectorised SSE forward simulations from $t=0$
+    seeded with $I_0$ index cases, retaining only those whose simulated
+    incidence on days $1, \ldots, r$ exactly matches the observed
+    $I_1, \ldots, I_r$.  Likewise for $b_\mathrm{SSI}$ SSI simulations.
+  \item For each retained simulation, continue forward until either the
+    single-step incidence reaches the major-outbreak threshold (resolved as
+    ``major'') or the most recent $L = \mathrm{len}(w)$ steps are all zero
+    (resolved as ``extinct'').
 \end{enumerate}
 
 Continue accumulating batches until a target number of resolved-and-matching
@@ -460,13 +343,409 @@ the accepted pool matches the posterior $\pi_M^\star$.  The pooled estimator
 \begin{equation}
   \widehat{\mathrm{PMO}}_\mathrm{avg}
   \;=\; \frac{N_\mathrm{SSE}^{\mathrm{maj}} + N_\mathrm{SSI}^{\mathrm{maj}}}
-            {N_\mathrm{SSE}^{\mathrm{acc}} + N_\mathrm{SSI}^{\mathrm{acc}}}
+  {N_\mathrm{SSE}^{\mathrm{acc}} + N_\mathrm{SSI}^{\mathrm{acc}}}
   \;=\; \widehat{\pi}_\mathrm{SSE}^\star\,\widehat{\mathrm{PMO}}_\mathrm{SSE}
-       + \widehat{\pi}_\mathrm{SSI}^\star\,\widehat{\mathrm{PMO}}_\mathrm{SSI}
+  + \widehat{\pi}_\mathrm{SSI}^\star\,\widehat{\mathrm{PMO}}_\mathrm{SSI}
 \end{equation}
 follows immediately, where $\widehat{\pi}_M^\star = N_M^{\mathrm{acc}} /
 (N_\mathrm{SSE}^{\mathrm{acc}} + N_\mathrm{SSI}^{\mathrm{acc}})$ is the
 implied posterior estimate and $\widehat{\mathrm{PMO}}_M = N_M^{\mathrm{maj}}
 / N_M^{\mathrm{acc}}$ is the per-model PMO from the accepted $M$-sims.
+
+% ===========================================================================
+\section{SSI model: closed forms for histories with cases on a few days}
+\label{sec:ssi_closed_forms}
+% ===========================================================================
+
+For the SSI model, when non-zero incidence is observed on day~$0$ and
+on a small number of later days, the joint posterior of the latent
+infectivities still factorises (or factorises as a finite mixture) and
+both the model evidence $L_\mathrm{SSI}$ and the residual extinction
+probability $q_r$ admit closed forms.  This section treats three such
+cases in turn: case~(i) (\S~\ref{sec:ssi_case_i}), incidence on day~$0$
+only; case~(ii) (\S~\ref{sec:ssi_case_ii}), incidence on day~$0$ and one
+later day; and case~(iii) (\S~\ref{sec:ssi_case_iii}), incidence on day~$0$
+and two later days.
+
+\paragraph{Strategy.}  Each derivation follows the same five steps:
+
+\begin{enumerate}
+  \item \emph{Conditional likelihood given the latents.}  Multiply the
+    per-day Poisson pmfs to obtain
+    $\mathbb{P}(\mathrm{obs} \mid Y_0, Y_{i_1}, \ldots, Y_{i_n})$.
+  \item \emph{Joint density of latents and observation.}  Multiply by
+    the independent Gamma priors $Y_s \sim \mathrm{Gamma}(k I_s, k)$ to
+    get $p(Y_0, Y_{i_1}, \ldots, Y_{i_n}, \mathrm{obs})$, with all
+    normalising constants visible.
+  \item \emph{Likelihood (model evidence).}  Integrate the joint density
+    over the latents using the Gamma normalisation
+    $\int_0^\infty Y^{\alpha-1} e^{-\beta Y}\,\mathrm{d}Y =
+    \Gamma(\alpha)/\beta^{\alpha}$ in each variable.
+  \item \emph{Posterior of the latents.}  Divide the joint density by
+    the likelihood to read off the posterior; in the cases below this
+    yields independent Gammas (or a finite mixture of independent-Gamma
+    products in case~(iii)).
+  \item \emph{Residual extinction probability and PMO.}  The conditional
+    extinction probability given the latents is
+    $q_r \mid (Y_s) = e^{-R_0(1-q)\Lambda}$ with
+    $\Lambda = \sum_{s=0}^r Y_s(1 - F_{r-s})$ (cf.\ the SSI MCMC
+    derivation in \S~SSI model above); marginalising over the posterior
+    via the Gamma MGF
+    $\mathbb{E}[e^{-tX}] = (1 + t/\beta)^{-\alpha}$ for
+    $X \sim \mathrm{Gamma}(\alpha, \beta)$ gives a closed-form $q_r$,
+    and the probability of a major outbreak is $\mathrm{PMO} = 1 - q_r$.
+\end{enumerate}
+
+A key identity used throughout is that $I_s = 0$ on day~$s$ forces
+$Y_s = 0$ (since $Y_s \mid I_s \sim \mathrm{Gamma}(k I_s, k)$ collapses
+to a point mass at $0$), so among the latents only those tied to
+non-zero observed days are non-degenerate.  Likewise, the SSE
+likelihood \eqref{eq:L_sse_general} is closed-form for any history,
+so each subsection below ends with the model-averaged PMO via Bayes'
+theorem from the per-model likelihoods and PMOs.
+
+% ---------------------------------------------------------------------------
+\subsection{Case (i): \(I_0 \geq 1\), \(I_1 = \cdots = I_r = 0\)}
+\label{sec:ssi_case_i}
+% ---------------------------------------------------------------------------
+
+Only $Y_0$ is non-degenerate; we abbreviate $y = Y_0$.
+
+\paragraph{Step 1: conditional likelihood.}
+Given $y$, $I_d$ is independently $\mathrm{Poisson}(R_0 w_d y)$ for
+$d = 1, \ldots, r$, so
+\begin{equation}\label{eq:cl_case_i}
+  \mathbb{P}(I_1 = \cdots = I_r = 0 \mid y)
+  \;=\; \prod_{d=1}^r e^{-R_0 w_d y}
+  \;=\; e^{-R_0 F_r y}.
+\end{equation}
+
+\paragraph{Step 2: joint density.}
+Multiplying \eqref{eq:cl_case_i} by the prior
+$y \sim \mathrm{Gamma}(k I_0, k)$,
+\begin{equation}\label{eq:jd_case_i}
+  p(y, \mathrm{obs})
+  \;=\; \frac{k^{k I_0}}{\Gamma(k I_0)}\,
+  y^{k I_0 - 1}\, e^{-(k + R_0 F_r) y}.
+\end{equation}
+
+\paragraph{Step 3: likelihood.}
+Integrating $y$ out of \eqref{eq:jd_case_i} via the Gamma normalisation,
+\begin{equation}\label{eq:L_ssi_case_i}
+  L_\mathrm{SSI}^{(\mathrm{i})}
+  \;=\; \frac{k^{k I_0}}{\Gamma(k I_0)}\cdot
+  \frac{\Gamma(k I_0)}{(k + R_0 F_r)^{k I_0}}
+  \;=\; \left(1 + \frac{R_0 F_r}{k}\right)^{-k I_0}.
+\end{equation}
+
+\paragraph{Step 4: posterior.}
+Dividing \eqref{eq:jd_case_i} by \eqref{eq:L_ssi_case_i} every constant
+cancels except the Gamma rate and shape, giving
+\begin{equation}\label{eq:post_case_i}
+  y \mid \mathrm{obs}
+  \;\sim\; \mathrm{Gamma}(k I_0,\; k + R_0 F_r).
+\end{equation}
+The posterior rate $k + R_0 F_r > k$ reflects the fact that observing
+no early transmission is evidence that $y$ is small: the index cohort
+is likely a low-infectivity one.
+
+\paragraph{Step 5: residual extinction probability and PMO.}
+The conditional remaining-offspring rate is
+$R_0 \Lambda = R_0(1 - F_r) y$, so the conditional extinction
+probability is $q_r \mid y = e^{-R_0(1-q)(1-F_r) y}$.  Marginalising
+over the posterior \eqref{eq:post_case_i} via the Gamma MGF,
+\begin{equation}\label{eq:qr_case_i}
+  q_r
+  \;=\; \mathbb{E}\!\left[e^{-R_0(1-q)(1-F_r)y}\right]
+  \;=\; \left(1 + \frac{R_0(1 - F_r)(1 - q)}{k + R_0 F_r}\right)^{-k I_0},
+\end{equation}
+and $\mathrm{PMO} = 1 - q_r$.
+
+\paragraph{Closed-form SSE counterpart.}
+Under the SSE model, $I_t \sim \mathrm{NB}(R_0 I_0 w_t,\, k I_0 w_t)$
+independently across $t = 1, \ldots, r$ when $I_1 = \cdots = I_r = 0$,
+so the general likelihood \eqref{eq:L_sse_general} reduces to
+\begin{equation}\label{eq:L_sse_case_i}
+  L_\mathrm{SSE}
+  \;=\; \prod_{t=1}^r \left(\frac{k}{k + R_0}\right)^{k I_0 w_t}
+  \;=\; \left(1 + \frac{R_0}{k}\right)^{-k I_0 F_r}.
+\end{equation}
+The two likelihoods share the same functional shape but with different
+exponents: the SSE exponent $k I_0 F_r$ is reduced by $F_r \leq 1$
+relative to the SSI exponent $k I_0$, reflecting the fact that the SSE
+total over days $1, \ldots, r$ has dispersion $k I_0 F_r$ whereas the
+SSI total has dispersion $k I_0$.  Combined with the SSE PMO
+$1 - q^{I_0(1 - F_r)}$ from \S~SSE model and the SSI PMO
+\eqref{eq:qr_case_i}, the model-averaged PMO is
+\begin{equation}\label{eq:pmo_avg_case_i}
+  \mathrm{PMO}_\mathrm{avg}
+  \;=\; \pi_\mathrm{SSE}^\star\,\bigl(1 - q^{I_0(1 - F_r)}\bigr)
+  + \pi_\mathrm{SSI}^\star\,\left[
+    1 - \left(1 + \frac{R_0(1 - F_r)(1 - q)}{k + R_0 F_r}\right)^{-k I_0}
+  \right].
+\end{equation}
+When $r = 0$, both likelihoods reduce to $1$, the posterior reduces to
+the prior, and the model-averaged PMO is just the prior-weighted
+average of the two per-model PMOs.
+
+\begin{remark}[Consistency with the MCMC formula]
+  When $I_1 = \cdots = I_r = 0$, the observations force
+  $Y_1 = \cdots = Y_r = 0$, so $\Lambda = Y_0(1 - F_r)$ and the
+  general MCMC posterior of \S~SSI model collapses to
+  \eqref{eq:post_case_i}.  Taking the expectation of
+  $e^{-R_0(1-q)(1-F_r)Y_0}$ with respect to that posterior via the
+  Gamma MGF recovers \eqref{eq:qr_case_i}.
+\end{remark}
+
+% ---------------------------------------------------------------------------
+\subsection{Case (ii): \(I_0, I_i \geq 1\) for one later day \(i\),
+all others zero}
+\label{sec:ssi_case_ii}
+% ---------------------------------------------------------------------------
+
+We now extend to $I_0 \geq 1$, $I_i \geq 1$ for some
+$i \in \{1, \ldots, r\}$, and $I_d = 0$ for
+$d \in \{1, \ldots, r\} \setminus \{i\}$.  Only $Y_0$ and $Y_i$ are
+non-degenerate.
+
+\paragraph{Step 1: conditional likelihood.}
+Given $(Y_0, Y_i)$, the day-$d$ Poisson rate is $R_0 w_d Y_0$ for
+$d \in \{1, \ldots, i\}$ and $R_0(w_d Y_0 + w_{d-i} Y_i)$ for
+$d \in \{i+1, \ldots, r\}$.  Multiplying the day-$d$ Poisson pmfs,
+\begin{align*}
+  \mathbb{P}(\mathrm{obs} \mid Y_0, Y_i)
+  &= \underbrace{\prod_{d=1}^{i-1} e^{-R_0 w_d Y_0}}_{=\, e^{-R_0 F_{i-1} Y_0}}
+  \;\cdot\;
+  \underbrace{\frac{(R_0 w_i Y_0)^{I_i}}{I_i!}\, e^{-R_0 w_i
+  Y_0}}_{\text{day-}i\text{ pmf}}
+  \;\cdot\;
+  \underbrace{\prod_{d=i+1}^{r} e^{-R_0(w_d Y_0 + w_{d-i} Y_i)}}_{=\,
+  e^{-R_0(F_r - F_i) Y_0}\, e^{-R_0 F_{r-i} Y_i}}.
+\end{align*}
+The $Y_0$ exponentials collapse via $F_{i-1} + w_i + (F_r - F_i) = F_r$, so
+\begin{equation}\label{eq:cl_case_ii}
+  \mathbb{P}(\mathrm{obs} \mid Y_0, Y_i)
+  \;=\; \frac{(R_0 w_i Y_0)^{I_i}}{I_i!}\,
+  e^{-R_0 F_r Y_0}\, e^{-R_0 F_{r-i} Y_i}.
+\end{equation}
+
+\paragraph{Step 2: joint density.}
+Multiplying \eqref{eq:cl_case_ii} by the priors
+$Y_0 \sim \mathrm{Gamma}(k I_0, k)$ and $Y_i \sim \mathrm{Gamma}(k I_i, k)$
+(independent),
+\begin{equation}\label{eq:jd_case_ii}
+  \begin{aligned}
+    p(Y_0, Y_i, \mathrm{obs})
+    &= \underbrace{\frac{(R_0 w_i)^{I_i}}{I_i!} \cdot
+    \frac{k^{k I_0 + k I_i}}{\Gamma(k I_0)\, \Gamma(k I_i)}}_{\text{constants}}
+    \\[2pt]
+    &\quad\times\;
+    \underbrace{Y_0^{k I_0 + I_i - 1}\, e^{-(k + R_0 F_r)
+    Y_0}}_{\text{Gamma kernel in } Y_0}
+    \;\cdot\;
+    \underbrace{Y_i^{k I_i - 1}\, e^{-(k + R_0 F_{r-i})
+    Y_i}}_{\text{Gamma kernel in } Y_i}.
+  \end{aligned}
+\end{equation}
+
+\paragraph{Step 3: likelihood.}
+Integrating each Gamma kernel of \eqref{eq:jd_case_ii} via the Gamma
+normalisation gives
+\begin{equation}\label{eq:L_ssi_case_ii}
+  L_\mathrm{SSI}^{(\mathrm{ii})}
+  \;=\; \frac{(R_0 w_i)^{I_i}}{I_i!}\,
+  \frac{\Gamma(k I_0 + I_i)}{\Gamma(k I_0)}\,
+  \frac{k^{k I_0}}{(k + R_0 F_r)^{k I_0 + I_i}}\,
+  \left(\frac{k}{k + R_0 F_{r-i}}\right)^{k I_i}.
+\end{equation}
+Setting $I_i = 0$ collapses the $\Gamma$-ratio and the second
+parenthesis to $1$, recovering \eqref{eq:L_ssi_case_i}.
+
+\paragraph{Step 4: posterior.}
+Dividing \eqref{eq:jd_case_ii} by \eqref{eq:L_ssi_case_ii}, every
+constant cancels and the two Gamma kernels normalise independently:
+\begin{equation}\label{eq:post_case_ii}
+  Y_0 \mid \mathrm{obs} \;\sim\; \mathrm{Gamma}(k I_0 + I_i,\; k + R_0 F_r),
+  \qquad
+  Y_i \mid \mathrm{obs} \;\sim\; \mathrm{Gamma}(k I_i,\; k + R_0 F_{r-i}).
+\end{equation}
+The shape of $Y_0$ is enriched by $I_i$: each observed offspring of
+the index cohort acts as a Bayesian data point tilting $Y_0$ toward
+higher values.  The $Y_i$ posterior is the day-0-only update
+\eqref{eq:post_case_i} applied to the day-$i$ cohort over its residual
+horizon $r - i$; setting $i = r$ gives $F_{r-i} = F_0 = 0$, so $Y_r$
+collapses to its prior, since the day-$r$ cohort has not had a
+chance to contribute.
+
+\paragraph{Step 5: residual extinction probability and PMO.}
+The remaining-offspring rate is $R_0 \Lambda$ with
+$\Lambda = Y_0(1 - F_r) + Y_i(1 - F_{r-i})$, so the conditional
+extinction probability is
+$q_r \mid (Y_0, Y_i) = e^{-R_0(1-q)\Lambda}$.  Marginalising over the
+two independent Gamma factors of \eqref{eq:post_case_ii} via the Gamma
+MGF gives
+\begin{equation}\label{eq:qr_case_ii}
+  q_r
+  \;=\; \left(1 + \frac{R_0(1 - F_r)(1 - q)}{k + R_0 F_r}\right)^{-(k
+  I_0 + I_i)}
+  \left(1 + \frac{R_0(1 - F_{r-i})(1 - q)}{k + R_0 F_{r-i}}\right)^{-k I_i},
+\end{equation}
+and $\mathrm{PMO} = 1 - q_r$.
+
+\begin{remark}[Reduction to case~(i)]
+  Setting $I_i = 0$ in \eqref{eq:qr_case_ii} collapses the second
+  factor to $1$ and the first factor's exponent to $-k I_0$,
+  recovering \eqref{eq:qr_case_i}; likewise \eqref{eq:L_ssi_case_ii}
+  reduces to \eqref{eq:L_ssi_case_i}.  As the observation horizon
+  extends ($r \to \infty$ with $i$ fixed), both factors of
+  \eqref{eq:qr_case_ii} tend to $1$ and $q_r \to 1$.
+\end{remark}
+
+% ---------------------------------------------------------------------------
+\subsection{Case (iii): \(I_0, I_i, I_j \geq 1\) for two later days
+\(i < j\), all others zero}
+\label{sec:ssi_case_iii}
+% ---------------------------------------------------------------------------
+
+Finally, take $I_0 \geq 1$, $I_i \geq 1$, $I_j \geq 1$ for some
+$1 \leq i < j \leq r$, and $I_d = 0$ for
+$d \in \{1, \ldots, r\} \setminus \{i, j\}$.  Now only
+$Y_0, Y_i, Y_j$ are non-degenerate.
+
+\paragraph{Step 1: conditional likelihood.}
+The conditional likelihood acquires an extra factor for the day-$j$
+Poisson pmf, whose rate $R_0(w_j Y_0 + w_{j-i} Y_i)$ couples $Y_0$
+and $Y_i$.  Repeating the telescoping argument of case~(ii) for each
+latent separately,
+\begin{equation}\label{eq:cl_case_iii}
+  \mathbb{P}(\mathrm{obs} \mid Y_0, Y_i, Y_j)
+  \;=\; \frac{(R_0 w_i Y_0)^{I_i}}{I_i!}\,
+  \frac{\bigl(R_0(w_j Y_0 + w_{j-i} Y_i)\bigr)^{I_j}}{I_j!}\,
+  e^{-R_0 F_r Y_0}\, e^{-R_0 F_{r-i} Y_i}\, e^{-R_0 F_{r-j} Y_j}.
+\end{equation}
+Expanding the day-$j$ rate via the binomial theorem,
+\begin{equation}\label{eq:bin_case_iii}
+  \bigl(w_j Y_0 + w_{j-i} Y_i\bigr)^{I_j}
+  \;=\; \sum_{m=0}^{I_j} \binom{I_j}{m}\, w_j^{I_j - m}\, w_{j-i}^{m}\,
+  Y_0^{I_j - m}\, Y_i^{m}.
+\end{equation}
+
+\begin{remark}[Latent-partition interpretation]
+  Equivalently, by Poisson superposition we may regard $I_j$ as the
+  sum of two independent Poissons --- one with mean $R_0 w_j Y_0$
+  counting day-$j$ infections that originated from the day-$0$
+  cohort, and one with mean $R_0 w_{j-i} Y_i$ counting those from the
+  day-$i$ cohort.  Each term $m$ in \eqref{eq:bin_case_iii} is the
+  joint probability that exactly $I_j - m$ originate from $Y_0$ and
+  $m$ from $Y_i$.
+\end{remark}
+
+\paragraph{Step 2: joint density.}
+Multiplying \eqref{eq:cl_case_iii} by the three independent priors
+$\mathrm{Gamma}(k I_0, k)$, $\mathrm{Gamma}(k I_i, k)$,
+$\mathrm{Gamma}(k I_j, k)$ and inserting \eqref{eq:bin_case_iii},
+\begin{equation}\label{eq:jd_case_iii}
+  \begin{aligned}
+    p(Y_0, Y_i, Y_j, \mathrm{obs})
+    &= \frac{(R_0 w_i)^{I_i}\, R_0^{I_j}}{I_i!\, I_j!}\,
+    \frac{k^{k I_0 + k I_i + k I_j}}{\Gamma(k I_0)\, \Gamma(k I_i)\,
+    \Gamma(k I_j)}\,
+    Y_j^{k I_j - 1}\, e^{-(k + R_0 F_{r-j}) Y_j}\\[2pt]
+    &\quad\times\;\sum_{m=0}^{I_j} \binom{I_j}{m}\, w_j^{I_j - m}\,
+    w_{j-i}^{m}\,
+    Y_0^{k I_0 + I_i + I_j - m - 1}\, e^{-(k + R_0 F_r) Y_0}\,
+    Y_i^{k I_i + m - 1}\, e^{-(k + R_0 F_{r-i}) Y_i}.
+  \end{aligned}
+\end{equation}
+This is a constant times a Gamma kernel in $Y_j$ (the same in every
+mixture component) times a finite mixture (over
+$m \in \{0, \ldots, I_j\}$) of Gamma-product kernels in $(Y_0, Y_i)$.
+
+\paragraph{Step 3: likelihood.}
+Integrating \eqref{eq:jd_case_iii} via the Gamma normalisation in each
+variable, define the per-mixture-component constants
+\begin{equation}\label{eq:cm_case_iii}
+  c_m \;:=\; \binom{I_j}{m}\, w_j^{I_j - m}\, w_{j-i}^{m}\,
+  \frac{\Gamma(k I_0 + I_i + I_j - m)}{(k + R_0 F_r)^{k I_0 + I_i + I_j - m}}\,
+  \frac{\Gamma(k I_i + m)}{(k + R_0 F_{r-i})^{k I_i + m}}.
+\end{equation}
+Cancelling the $\Gamma(k I_j)$ factors and grouping $k^{k I_j}$ with
+the $Y_j$-rate gives
+\begin{equation}\label{eq:L_ssi_case_iii}
+  L_\mathrm{SSI}^{(\mathrm{iii})}
+  \;=\; \frac{(R_0 w_i)^{I_i}\, R_0^{I_j}}{I_i!\, I_j!}\,
+  \frac{k^{k I_0 + k I_i}}{\Gamma(k I_0)\, \Gamma(k I_i)}\,
+  \left(\frac{k}{k + R_0 F_{r-j}}\right)^{k I_j}
+  \sum_{m=0}^{I_j} c_m.
+\end{equation}
+Setting $I_j = 0$ collapses the sum to its $m = 0$ term and the
+$(k/(k + R_0 F_{r-j}))^{k I_j}$ factor to $1$, recovering
+\eqref{eq:L_ssi_case_ii}.
+
+\paragraph{Step 4: posterior.}
+Dividing \eqref{eq:jd_case_iii} by \eqref{eq:L_ssi_case_iii}: the
+$Y_j$-Gamma rate-and-shape pair appears in both numerator and
+denominator and gives the
+$\mathrm{Gamma}(Y_j \mid k I_j, k + R_0 F_{r-j})$ density.  Within the
+sum, the constants outside cancel; what remains in the $m$th term is
+$c_m$ (numerator) divided by $\sum_{m'} c_{m'}$ (denominator), times
+the two unnormalised $(Y_0, Y_i)$ Gamma kernels each with their proper
+normalising constants supplied directly from the $c_m$ in the
+denominator.  The result is a finite mixture of independent Gamma
+products,
+\begin{equation}\label{eq:post_case_iii}
+  \begin{aligned}
+    &p(Y_0, Y_i, Y_j \mid \mathrm{obs})
+    \;=\; \mathrm{Gamma}\bigl(Y_j \,\big|\, k I_j,\; k + R_0 F_{r-j}\bigr)
+    \\[2pt]
+    &\qquad\times\;\sum_{m=0}^{I_j} \rho_m\,
+    \mathrm{Gamma}\bigl(Y_0 \,\big|\, k I_0 + I_i + I_j - m,\; k +
+    R_0 F_r\bigr)\,
+    \mathrm{Gamma}\bigl(Y_i \,\big|\, k I_i + m,\; k + R_0 F_{r-i}\bigr),
+  \end{aligned}
+\end{equation}
+with normalised mixture weights
+\begin{equation}\label{eq:rho_case_iii}
+  \rho_m \;=\; \frac{c_m}{\sum_{m' = 0}^{I_j} c_{m'}}.
+\end{equation}
+The mixture index $m$ tracks how many of the $I_j$ day-$j$ infections
+are attributed to $Y_i$ versus $Y_0$; the weights $\rho_m$ encode
+which partition is most consistent with the prior infectivity
+distributions, the serial-interval weights $w_j$, $w_{j-i}$, and the
+dispersion $k$.
+
+\paragraph{Step 5: residual extinction probability and PMO.}
+The remaining-offspring rate is now
+$R_0 \Lambda = R_0 [Y_0(1 - F_r) + Y_i(1 - F_{r-i}) + Y_j(1 - F_{r-j})]$,
+so the conditional extinction probability is
+$q_r \mid (Y_0, Y_i, Y_j) = e^{-R_0(1-q)\Lambda}$.  Marginalising
+over the posterior \eqref{eq:post_case_iii}, $Y_j$'s expectation
+factors out (its density is independent of $m$); within each mixture
+component the $(Y_0, Y_i)$-densities are independent Gammas whose
+MGFs evaluate term-by-term, giving
+\begin{equation}\label{eq:qr_case_iii}
+  q_r \;=\; \beta_j^{-k I_j} \sum_{m=0}^{I_j} \rho_m\,
+  \beta_0^{-(k I_0 + I_i + I_j - m)}\, \beta_i^{-(k I_i + m)},
+\end{equation}
+where, for $a \in \{0, i, j\}$ (with the convention $F_{r-0} = F_r$),
+\[
+  \beta_a \;=\; 1 + \frac{R_0(1 - q)(1 - F_{r-a})}{k + R_0 F_{r-a}}.
+\]
+
+\begin{remark}[Reductions to simpler cases]
+  When $I_j \to 0$ the sum collapses to its $m = 0$ term
+  ($\rho_0 = 1$) and $\beta_j^{-k I_j} \to 1$: \eqref{eq:qr_case_iii}
+  reduces to \eqref{eq:qr_case_ii}.  When also $I_i \to 0$, the
+  exponent on $\beta_i$ in \eqref{eq:qr_case_ii} vanishes and the
+  exponent on $\beta_0$ reduces from $-(k I_0 + I_i)$ to $-k I_0$,
+  recovering \eqref{eq:qr_case_i}.  Similarly \eqref{eq:L_ssi_case_iii} reduces to
+  \eqref{eq:L_ssi_case_ii} and then to \eqref{eq:L_ssi_case_i}.
+\end{remark}
+
+\paragraph{Computational note.}
+The $c_m$ involve $\Gamma$ factors of size up to
+$k I_0 + I_i + I_j$, so for moderate $I_j$ a log-domain computation
+($\log\Gamma$, $\mathrm{logsumexp}$) is recommended.  The number of
+sum terms is $I_j + 1$, typically small for the histories of interest.
 
 \end{document}

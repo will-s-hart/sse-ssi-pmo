@@ -36,12 +36,12 @@ from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
 from sse_ssi_pmo.extinction import (
+    _classify_history,
     _pmo_sse_analytic,
-    _pmo_ssi_analytic_special,
+    _pmo_ssi_analytic,
     _pmo_ssi_mcmc,
-    _pmo_uncertain_analytic_special,
+    _pmo_uncertain_analytic,
 )
-from sse_ssi_pmo.serial_interval import cumulative
 from sse_ssi_pmo.simulation import _pmo_sse_sim, _pmo_ssi_sim, _pmo_uncertain_sim
 
 
@@ -186,11 +186,12 @@ def pmo_ssi(
         Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
         non-negative integers with ``history[0] >= 1``.
     method
-        ``"analytic"`` for the closed-form day-0-only special case (cases
-        on day 0 followed by ``r`` days with no cases); raises
-        :class:`ValueError` if the history has a non-zero entry past day 0.
-        ``"simulation"`` for a Monte-Carlo estimate (forwarded to the SSI
-        simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
+        ``"analytic"`` for the closed-form solution. Supports histories
+        with cases on day 0 only, on day 0 and one later day (case (i)),
+        or on day 0 and two later days (case (ii)); raises
+        :class:`ValueError` for histories with three or more later non-zero
+        days. ``"simulation"`` for a Monte-Carlo estimate (forwarded to the
+        SSI simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
         ``rng``, ``batch_size``, ``max_attempts``, ``show_progress`` as
         keyword arguments).
         ``"mcmc"`` for a Monte-Carlo estimate via MCMC over the latent
@@ -207,20 +208,15 @@ def pmo_ssi(
             raise TypeError(
                 f"pmo_ssi(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
-        nonzero_after_day0 = np.flatnonzero(hist_arr[1:] != 0)
-        if nonzero_after_day0.size > 0:
-            offending_days = (nonzero_after_day0 + 1).tolist()
+        if _classify_history(hist_arr)["kind"] == "general":
+            offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
             raise ValueError(
                 "pmo_ssi(method='analytic') requires a history with cases on "
-                "day 0 only (followed by zeros); "
+                "day 0 and at most two later days; "
                 f"got non-zero cases on day(s) {offending_days}. "
                 "Use method='simulation' or method='mcmc'."
             )
-        I_0 = int(hist_arr[0])
-        r = hist_arr.size - 1
-        F = cumulative(w_arr)
-        F_r = float(F[min(r, F.size - 1)])
-        out = _pmo_ssi_analytic_special(R0, k, I_0, F_r)
+        out = _pmo_ssi_analytic(R0, k, w_arr, hist_arr)
     elif method == "simulation":
         out = _dispatch(_pmo_ssi_sim, R0, k, w_arr, hist_arr, "pmo_ssi", kwargs)
     elif method == "mcmc":
@@ -308,13 +304,14 @@ def pmo_uncertain(
         Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
         non-negative integers with ``history[0] >= 1``.
     method
-        ``"analytic"`` for the closed-form Bayes update; only supports
-        histories with cases on day 0 alone (followed by zeros) and raises
-        :class:`NotImplementedError` otherwise. ``"simulation"`` for the
-        rejection-sampling estimator (forwarded to
-        :func:`_pmo_uncertain_sim`; takes ``n_sims``, ``threshold``,
-        ``t_max``, ``rng``, ``batch_size``, ``max_attempts``,
-        ``show_progress`` as keyword arguments).
+        ``"analytic"`` for the closed-form Bayes update. Supports
+        histories with cases on day 0 only, on day 0 and one later day
+        (case (i)), or on day 0 and two later days (case (ii)); raises
+        :class:`NotImplementedError` for histories with three or more
+        later non-zero days. ``"simulation"`` for the rejection-sampling
+        estimator (forwarded to :func:`_pmo_uncertain_sim`; takes
+        ``n_sims``, ``threshold``, ``t_max``, ``rng``, ``batch_size``,
+        ``max_attempts``, ``show_progress`` as keyword arguments).
     prior_sse
         Prior probability of the SSE model in ``[0, 1]``. Default ``0.5``.
 
@@ -336,16 +333,15 @@ def pmo_uncertain(
                 f"pmo_uncertain(method='analytic') got unexpected keyword arguments: "
                 f"{sorted(kwargs)}"
             )
-        nonzero_after_day0 = np.flatnonzero(hist_arr[1:] != 0)
-        if nonzero_after_day0.size > 0:
-            offending_days = (nonzero_after_day0 + 1).tolist()
+        if _classify_history(hist_arr)["kind"] == "general":
+            offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
             raise NotImplementedError(
                 "pmo_uncertain(method='analytic') requires a history with cases on "
-                "day 0 only (followed by zeros); "
+                "day 0 and at most two later days; "
                 f"got non-zero cases on day(s) {offending_days}. "
                 "Use method='simulation'."
             )
-        result = _pmo_uncertain_analytic_special(R0, k, w_arr, hist_arr, prior_sse)
+        result = _pmo_uncertain_analytic(R0, k, w_arr, hist_arr, prior_sse)
     elif method == "simulation":
         kwargs["prior_sse"] = prior_sse
         result = _dispatch_multi(

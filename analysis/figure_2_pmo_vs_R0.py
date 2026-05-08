@@ -2,12 +2,15 @@
 
 Analytic curves (one per model) overlaid with Monte-Carlo simulation points at
 a subset of R_0 values.
+
+Loads pre-computed results from results/fig2_pmo_vs_R0.csv (run
+results_2_pmo_vs_R0.py first).
 """
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-import numpy as np
+import pandas as pd
 from _plotting import (
     SIM_LABEL_SUFFIX,
     SIM_MARKERSIZE,
@@ -24,93 +27,33 @@ from _plotting import (
 )
 from analysis_defaults import (
     DEFAULT_K,
-    DEFAULT_N_POINTS,
     DEFAULT_R_WEEKS,
-    DEFAULT_SI_MAX,
-    DEFAULT_SI_MEAN,
-    DEFAULT_SI_SD,
     FIG2_R0_MAX,
     FIG2_R0_MIN,
     OUT_DIR,
-    SIM_BATCH_SSI,
-    SIM_MAX_ATTEMPTS_SSI,
-    SIM_N_SSE,
-    SIM_N_SSI,
-    SIM_SEED,
-    SIM_SUBSET_POINTS,
-    SIM_T_MAX,
+    RESULTS_DIR,
     SIM_THRESHOLD,
 )
-from tqdm.auto import tqdm
 
-from sse_ssi_pmo import (
-    cumulative,
-    discretise_gamma,
-    pmo_sse,
-    pmo_ssi,
-)
-
-# ---------------------------------------------------------------------------
-# Tuneable parameters
-# ---------------------------------------------------------------------------
 K: float = DEFAULT_K
-R_WEEKS: int = DEFAULT_R_WEEKS  # conditioning window (weeks of zero cases)
-SI_MEAN: float = DEFAULT_SI_MEAN
-SI_SD: float = DEFAULT_SI_SD
-SI_MAX: int = DEFAULT_SI_MAX
+R_WEEKS: int = DEFAULT_R_WEEKS
 R0_MIN: float = FIG2_R0_MIN
 R0_MAX: float = FIG2_R0_MAX
-N_POINTS: int = DEFAULT_N_POINTS
 
 
 def main() -> None:
     set_style()
 
-    w = discretise_gamma(mean=SI_MEAN, sd=SI_SD, max_val=SI_MAX)
-    F_r = float(cumulative(w)[R_WEEKS])  # for the title only
-
-    R0_vals = np.linspace(R0_MIN, R0_MAX, N_POINTS)
-    history = np.array([1] + [0] * R_WEEKS, dtype=np.int64)
-    pmo_sse_vals = pmo_sse(R0=R0_vals, k=K, w=w, history=history, method="analytic")
-    pmo_ssi_vals = pmo_ssi(R0=R0_vals, k=K, w=w, history=history, method="analytic")
-
-    sim_idx = np.linspace(0, N_POINTS - 1, SIM_SUBSET_POINTS, dtype=int)
-    R0_sim = R0_vals[sim_idx]
-    rng = np.random.default_rng(SIM_SEED)
-    sse_sim_vals = np.empty(R0_sim.size, dtype=np.float64)
-    ssi_sim_vals = np.empty(R0_sim.size, dtype=np.float64)
-    for i, R0 in enumerate(tqdm(R0_sim, desc="fig2 sims")):
-        sse_sim_vals[i] = pmo_sse(
-            R0=float(R0),
-            k=K,
-            w=w,
-            history=history,
-            method="simulation",
-            n_sims=SIM_N_SSE,
-            threshold=SIM_THRESHOLD,
-            t_max=SIM_T_MAX,
-            rng=rng,
-        )
-        ssi_sim_vals[i] = pmo_ssi(
-            R0=float(R0),
-            k=K,
-            w=w,
-            history=history,
-            method="simulation",
-            n_sims=SIM_N_SSI,
-            threshold=SIM_THRESHOLD,
-            t_max=SIM_T_MAX,
-            rng=rng,
-            batch_size=SIM_BATCH_SSI,
-            max_attempts=SIM_MAX_ATTEMPTS_SSI,
-        )
+    df = pd.read_csv(RESULTS_DIR / "fig2_pmo_vs_R0.csv")
+    df_sim = df.dropna(subset=["sse_sim", "ssi_sim"])
+    F_r = float(df["F_r"].iloc[0])
 
     fig, ax = plt.subplots()
-    ax.plot(R0_vals, pmo_sse_vals, color=SSE_COLOUR, label=SSE_LABEL, linestyle=SSE_LINESTYLE)
-    ax.plot(R0_vals, pmo_ssi_vals, color=SSI_COLOUR, label=SSI_LABEL, linestyle=SSI_LINESTYLE)
+    ax.plot(df["R0"], df["pmo_sse"], color=SSE_COLOUR, label=SSE_LABEL, linestyle=SSE_LINESTYLE)
+    ax.plot(df["R0"], df["pmo_ssi"], color=SSI_COLOUR, label=SSI_LABEL, linestyle=SSI_LINESTYLE)
     ax.scatter(
-        R0_sim,
-        sse_sim_vals,
+        df_sim["R0"],
+        df_sim["sse_sim"],
         color=SSE_COLOUR,
         marker=SSE_SIM_MARKER,
         s=SIM_MARKERSIZE**2,
@@ -120,8 +63,8 @@ def main() -> None:
         label=SSE_LABEL + SIM_LABEL_SUFFIX,
     )
     ax.scatter(
-        R0_sim,
-        ssi_sim_vals,
+        df_sim["R0"],
+        df_sim["ssi_sim"],
         color=SSI_COLOUR,
         marker=SSI_SIM_MARKER,
         s=SIM_MARKERSIZE**2,

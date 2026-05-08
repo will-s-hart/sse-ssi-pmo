@@ -14,6 +14,11 @@ Private API (used by :mod:`sse_ssi_pmo.pmo`):
   SSE seeds forward simulation with the history; SSI simulates from ``t = 0``
   and rejects sims whose first ``len(history)`` steps don't match (with
   vectorised early termination on first mismatch).
+* :func:`_pmo_uncertain_sim` — model-averaged Monte-Carlo PMO. Each batch is
+  split between SSE and SSI via a Binomial draw with probability
+  ``prior_sse``; both sub-batches use rejection sampling against the
+  history. The acceptance-rate ratio implicitly realises the Bayesian
+  posterior over models.
 
 The simulation parameterisation matches the offspring distributions used in
 ``extinction.py`` and described in ``notes/notes.tex``:
@@ -82,7 +87,7 @@ def simulate_sse(
     if init.ndim != 1 or init.size == 0:
         raise ValueError("init_incidence must be a non-empty 1-D array of integers")
 
-    _major, _extinct, _indet, incidence = _batch_sse(
+    _major, _extinct, _valid, incidence = _batch_sse(
         R0, k, w_arr, init, n_sims=1, threshold=threshold, t_max=t_max, rng=rng
     )
     end = _resolution_index(incidence[0], len(w_arr), threshold)
@@ -150,21 +155,43 @@ def _batch_sse(
     threshold: int,
     t_max: int,
     rng: np.random.Generator,
+    match_history: NDArray[np.int64] | None = None,
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_], NDArray[np.bool_], NDArray[np.int64]]:
     """Vectorised SSE forward sim, all sims seeded with ``init_incidence``.
 
-    Returns ``(major, extinct, indeterminate, incidence)``: three disjoint bool
-    arrays of length ``n_sims`` and the full incidence array of shape
-    ``(n_sims, t_max)``.
+    Returns ``(major, extinct, valid, incidence)``. Without ``match_history``
+    every sim is valid by construction (so ``valid`` is all True and the
+    indeterminate-at-``t_max`` mask is ``valid & ~(major | extinct)``).
+
+    With ``match_history`` provided, sims whose simulated ``incidence[t]``
+    differs from ``match_history[t]`` for any ``len(init_incidence) <= t <
+    len(match_history)`` are marked invalid and abandoned (mirroring
+    ``_batch_ssi``). In typical use ``init_incidence`` is just
+    ``match_history[:1]`` so all post-day-0 entries are matched.
     """
     L = len(w)
     history_len = len(init_incidence)
     if history_len > t_max:
         raise ValueError("init_incidence longer than t_max")
+    if match_history is not None:
+        if match_history.size < history_len or not np.array_equal(
+            match_history[:history_len], init_incidence
+        ):
+            raise ValueError(
+                "match_history must extend init_incidence (matching its first entries)"
+            )
+        if match_history.size > t_max:
+            raise ValueError("match_history longer than t_max")
+        match_history_arr: NDArray[np.int64] = match_history
+        match_len = match_history.size
+    else:
+        match_history_arr = np.empty(0, dtype=np.int64)
+        match_len = 0
 
     incidence = np.zeros((n_sims, t_max), dtype=np.int64)
     incidence[:, :history_len] = init_incidence
 
+    valid = np.ones(n_sims, dtype=bool)
     major = (
         incidence[:, :history_len].max(axis=1) >= threshold
         if history_len > 0
@@ -179,7 +206,7 @@ def _batch_sse(
     w_rev_cache: dict[int, NDArray[np.float64]] = {}
 
     for t in range(history_len, t_max):
-        live_mask = ~(major | extinct)
+        live_mask = valid & ~(major | extinct)
         if not live_mask.any():
             break
         idx = np.where(live_mask)[0]
@@ -193,6 +220,17 @@ def _batch_sse(
         if nz.any():
             new_inc[nz] = rng.negative_binomial(k * foi[nz], p_nb)
         incidence[idx, t] = new_inc
+
+        if t < match_len:
+            mismatch = new_inc != match_history_arr[t]
+            if mismatch.any():
+                valid[idx[mismatch]] = False
+                keep = ~mismatch
+                idx = idx[keep]
+                new_inc = new_inc[keep]
+                if idx.size == 0:
+                    continue
+
         new_major = new_inc >= threshold
         ext_start = max(0, t + 1 - L)
         new_extinct = incidence[idx, ext_start : t + 1].sum(axis=1) == 0
@@ -200,8 +238,7 @@ def _batch_sse(
         major[idx[new_major]] = True
         extinct[idx[new_extinct]] = True
 
-    indeterminate = ~(major | extinct)
-    return major, extinct, indeterminate, incidence
+    return major, extinct, valid, incidence
 
 
 def _batch_ssi(
@@ -318,10 +355,10 @@ def _pmo_sse_sim(
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
 
-    major, extinct, indet, _ = _batch_sse(
+    major, extinct, valid, _ = _batch_sse(
         R0, k, w_arr, hist_arr, n_sims=n_sims, threshold=threshold, t_max=t_max, rng=rng
     )
-    n_indet = int(indet.sum())
+    n_indet = int((valid & ~(major | extinct)).sum())
     if n_indet:
         warnings.warn(
             f"{n_indet}/{n_sims} SSE sims hit t_max={t_max} unresolved; raise t_max.",
@@ -413,6 +450,142 @@ def _pmo_ssi_sim(
             stacklevel=2,
         )
     return n_major / n_resolved
+
+
+def _pmo_uncertain_sim(
+    R0: float,
+    k: float,
+    w: ArrayLike,
+    history: ArrayLike,
+    *,
+    n_sims: int,
+    threshold: int,
+    t_max: int,
+    prior_sse: float,
+    rng: np.random.Generator | None = None,
+    batch_size: int = 2000,
+    max_attempts: int | None = None,
+    show_progress: bool = False,
+) -> dict[str, float]:
+    """Model-averaged PMO via per-batch Binomial split rejection sampling.
+
+    Each batch of size ``batch_size`` is split between SSE and SSI by drawing
+    ``b_sse ~ Bin(batch_size, prior_sse)``; both sub-batches do vectorised
+    rejection sampling against ``history``. Continues accumulating batches
+    until ``n_sims`` matching trajectories have been resolved (or
+    ``max_attempts`` total trajectories tried). Returns a dict with keys
+    ``pmo``, ``posterior_sse``, ``pmo_sse``, ``pmo_ssi``.
+
+    See ``notes/notes.tex`` for the derivation; the relative acceptance
+    rates of the two models implicitly realise the Bayesian posterior over
+    models. ``max_attempts`` defaults to ``200 * n_sims``.
+    """
+    rng = np.random.default_rng() if rng is None else rng
+    w_arr = np.asarray(w, dtype=np.float64)
+    hist_arr = np.asarray(history, dtype=np.int64)
+    _check_inputs(R0, k, w_arr, threshold, t_max)
+    if n_sims < 1:
+        raise ValueError("n_sims must be at least 1")
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1")
+    if not 0.0 <= prior_sse <= 1.0:
+        raise ValueError("prior_sse must lie in [0, 1]")
+    if max_attempts is None:
+        max_attempts = 200 * n_sims
+
+    n_major_sse = n_extinct_sse = n_indet_sse = 0
+    n_major_ssi = n_extinct_ssi = n_indet_ssi = 0
+    n_attempted = 0
+    seed = hist_arr[:1]
+
+    pbar = (
+        tqdm(total=n_sims, desc="uncertain matching sims", leave=False) if show_progress else None
+    )
+
+    while (
+        n_major_sse + n_extinct_sse + n_major_ssi + n_extinct_ssi
+    ) < n_sims and n_attempted < max_attempts:
+        b = min(batch_size, max_attempts - n_attempted)
+        b_sse = int(rng.binomial(b, prior_sse))
+        b_ssi = b - b_sse
+
+        if b_sse > 0:
+            major, extinct, valid, _ = _batch_sse(
+                R0,
+                k,
+                w_arr,
+                seed,
+                n_sims=b_sse,
+                threshold=threshold,
+                t_max=t_max,
+                rng=rng,
+                match_history=hist_arr,
+            )
+            n_major_sse += int((major & valid).sum())
+            n_extinct_sse += int((extinct & valid).sum())
+            n_indet_sse += int((valid & ~(major | extinct)).sum())
+        if b_ssi > 0:
+            major, extinct, valid, _ = _batch_ssi(
+                R0,
+                k,
+                w_arr,
+                hist_arr,
+                n_sims=b_ssi,
+                threshold=threshold,
+                t_max=t_max,
+                rng=rng,
+            )
+            n_major_ssi += int((major & valid).sum())
+            n_extinct_ssi += int((extinct & valid).sum())
+            n_indet_ssi += int((valid & ~(major | extinct)).sum())
+
+        n_attempted += b
+        if pbar is not None:
+            resolved = n_major_sse + n_extinct_sse + n_major_ssi + n_extinct_ssi
+            pbar.update(min(resolved, n_sims) - pbar.n)
+
+    if pbar is not None:
+        pbar.close()
+
+    n_indet_total = n_indet_sse + n_indet_ssi
+    if n_indet_total:
+        warnings.warn(
+            f"{n_indet_total} matching uncertain sims hit t_max={t_max} unresolved; raise t_max.",
+            stacklevel=2,
+        )
+
+    n_acc_sse = n_major_sse + n_extinct_sse
+    n_acc_ssi = n_major_ssi + n_extinct_ssi
+    n_acc_total = n_acc_sse + n_acc_ssi
+    if n_acc_total == 0:
+        warnings.warn(
+            f"No matching uncertain sims after {n_attempted} attempts; returning NaN. "
+            "Increase max_attempts or check history feasibility.",
+            stacklevel=2,
+        )
+        return {
+            "pmo": float("nan"),
+            "posterior_sse": float("nan"),
+            "pmo_sse": float("nan"),
+            "pmo_ssi": float("nan"),
+        }
+    if n_acc_total < n_sims:
+        warnings.warn(
+            f"Only {n_acc_total}/{n_sims} matching uncertain sims resolved after "
+            f"{n_attempted} attempts (max_attempts={max_attempts}).",
+            stacklevel=2,
+        )
+
+    pmo = (n_major_sse + n_major_ssi) / n_acc_total
+    posterior_sse = n_acc_sse / n_acc_total
+    pmo_sse = n_major_sse / n_acc_sse if n_acc_sse > 0 else float("nan")
+    pmo_ssi = n_major_ssi / n_acc_ssi if n_acc_ssi > 0 else float("nan")
+    return {
+        "pmo": pmo,
+        "posterior_sse": posterior_sse,
+        "pmo_sse": pmo_sse,
+        "pmo_ssi": pmo_ssi,
+    }
 
 
 __all__ = [

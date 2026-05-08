@@ -7,6 +7,7 @@ dependencies = [
     "numpy>=2.0",
     "scipy>=1.13",
     "matplotlib>=3.8",
+    "pandas>=2.0",
     "tqdm>=4.66",
     "pymc>=5.0",
     "arviz>=0.19",
@@ -44,10 +45,18 @@ default = { features = ["dev"] }
 lint = "ruff check src analysis"
 fmt = "ruff format src analysis"
 typecheck = "env -u VIRTUAL_ENV ty check src analysis"
+res1 = "python analysis/results_1_pmo_vs_r.py"
+res2 = "python analysis/results_2_pmo_vs_R0.py"
+res3 = "python analysis/results_3_pmo_vs_k.py"
+res4 = "python analysis/results_4_pmo_comparison.py"
+res5 = "python analysis/results_5_pmo_uncertain.py"
+results = { depends-on = ["res1", "res2", "res3", "res4", "res5"] }
 fig1 = "python analysis/figure_1_pmo_vs_r.py"
 fig2 = "python analysis/figure_2_pmo_vs_R0.py"
 fig3 = "python analysis/figure_3_pmo_vs_k.py"
-figs = { depends-on = ["fig1", "fig2", "fig3"] }
+fig4 = "python analysis/figure_4_pmo_comparison.py"
+fig5 = "python analysis/figure_5_pmo_uncertain.py"
+figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5"] }
 
 # ---------------------------------------------------------------------------
 # ruff

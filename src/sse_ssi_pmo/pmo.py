@@ -1,6 +1,6 @@
 """Probability of major outbreak (PMO) — public dispatcher API.
 
-Two top-level functions, one per model, each taking the observed incidence
+Three top-level functions, each taking the observed incidence
 ``history = (I_0, I_1, ..., I_r)`` together with the serial-interval weights
 ``w`` and dispatching to either an analytic closed-form or a Monte-Carlo
 simulation:
@@ -11,30 +11,54 @@ simulation:
   by zeros). ``"mcmc"`` samples the latent infectivities via HMC and averages
   the conditional extinction probability over draws — see ``notes/notes.tex``
   for the derivation.
+* :func:`pmo_uncertain` — Bayesian model average across SSE and SSI given a
+  prior ``prior_sse`` on the SSE model. ``method ∈ {"analytic",
+  "simulation"}``; ``"analytic"`` only supports the day-0-only history.
+  Returns a :class:`PmoUncertainResult` NamedTuple with the model-averaged
+  PMO, the posterior probability of SSE, and the per-model PMOs.
 
-Both functions broadcast over ``R0`` and ``k`` (scalar or array). Scalar
-inputs return a Python ``float``; array inputs return a NumPy array of the
-broadcast shape. The simulation and MCMC paths run the inner backend once per
-``(R0, k)`` combination and, when ``show_progress=True`` and there is more
-than one combination, wrap the parameter-combination loop with a single
-``tqdm`` bar (passing ``show_progress=False`` to each inner call).
+All functions broadcast over ``R0`` and ``k`` (scalar or array). Scalar
+inputs return a Python ``float`` (or float-valued NamedTuple for
+``pmo_uncertain``); array inputs return a NumPy array (or array-valued
+NamedTuple) of the broadcast shape. The simulation and MCMC paths run the
+inner backend once per ``(R0, k)`` combination and, when
+``show_progress=True`` and there is more than one combination, wrap the
+parameter-combination loop with a single ``tqdm`` bar (passing
+``show_progress=False`` to each inner call).
 """
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
 from sse_ssi_pmo.extinction import (
+    _classify_history,
     _pmo_sse_analytic,
-    _pmo_ssi_analytic_special,
+    _pmo_ssi_analytic,
     _pmo_ssi_mcmc,
+    _pmo_uncertain_analytic,
 )
-from sse_ssi_pmo.serial_interval import cumulative
-from sse_ssi_pmo.simulation import _pmo_sse_sim, _pmo_ssi_sim
+from sse_ssi_pmo.simulation import _pmo_sse_sim, _pmo_ssi_sim, _pmo_uncertain_sim
+
+
+class PmoUncertainResult(NamedTuple):
+    """Return type of :func:`pmo_uncertain`.
+
+    ``pmo`` is the model-averaged probability of a major outbreak;
+    ``posterior_sse`` is the posterior probability of the SSE model given
+    the observed history; ``pmo_sse`` and ``pmo_ssi`` are the per-model
+    PMOs. Each field is a Python ``float`` for scalar ``(R0, k)`` inputs
+    and a NumPy array of the broadcast shape otherwise.
+    """
+
+    pmo: float | NDArray[np.float64]
+    posterior_sse: float | NDArray[np.float64]
+    pmo_sse: float | NDArray[np.float64]
+    pmo_ssi: float | NDArray[np.float64]
 
 
 def _validate_history(history: ArrayLike) -> NDArray[np.int64]:
@@ -162,11 +186,12 @@ def pmo_ssi(
         Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
         non-negative integers with ``history[0] >= 1``.
     method
-        ``"analytic"`` for the closed-form day-0-only special case (cases
-        on day 0 followed by ``r`` days with no cases); raises
-        :class:`ValueError` if the history has a non-zero entry past day 0.
-        ``"simulation"`` for a Monte-Carlo estimate (forwarded to the SSI
-        simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
+        ``"analytic"`` for the closed-form solution. Supports histories
+        with cases on day 0 only, on day 0 and one later day (case (i)),
+        or on day 0 and two later days (case (ii)); raises
+        :class:`ValueError` for histories with three or more later non-zero
+        days. ``"simulation"`` for a Monte-Carlo estimate (forwarded to the
+        SSI simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
         ``rng``, ``batch_size``, ``max_attempts``, ``show_progress`` as
         keyword arguments).
         ``"mcmc"`` for a Monte-Carlo estimate via MCMC over the latent
@@ -183,20 +208,15 @@ def pmo_ssi(
             raise TypeError(
                 f"pmo_ssi(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
-        nonzero_after_day0 = np.flatnonzero(hist_arr[1:] != 0)
-        if nonzero_after_day0.size > 0:
-            offending_days = (nonzero_after_day0 + 1).tolist()
+        if _classify_history(hist_arr)["kind"] == "general":
+            offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
             raise ValueError(
                 "pmo_ssi(method='analytic') requires a history with cases on "
-                "day 0 only (followed by zeros); "
+                "day 0 and at most two later days; "
                 f"got non-zero cases on day(s) {offending_days}. "
                 "Use method='simulation' or method='mcmc'."
             )
-        I_0 = int(hist_arr[0])
-        r = hist_arr.size - 1
-        F = cumulative(w_arr)
-        F_r = float(F[min(r, F.size - 1)])
-        out = _pmo_ssi_analytic_special(R0, k, I_0, F_r)
+        out = _pmo_ssi_analytic(R0, k, w_arr, hist_arr)
     elif method == "simulation":
         out = _dispatch(_pmo_ssi_sim, R0, k, w_arr, hist_arr, "pmo_ssi", kwargs)
     elif method == "mcmc":
@@ -211,4 +231,147 @@ def pmo_ssi(
     return out
 
 
-__all__ = ["pmo_sse", "pmo_ssi"]
+def _dispatch_multi(
+    fn,
+    R0: ArrayLike,
+    k: ArrayLike,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+    label: str,
+    fn_kwargs: dict,
+    output_keys: tuple[str, ...],
+) -> dict[str, NDArray[np.float64]]:
+    """Like :func:`_dispatch` but ``fn`` returns a dict per ``(R0, k)`` call.
+
+    Allocates one broadcast-shaped array per key in ``output_keys`` and
+    fills them from the per-call dicts. Progress-bar handling matches
+    :func:`_dispatch`.
+    """
+    show_progress = fn_kwargs.pop("show_progress", False)
+    R0_arr = np.asarray(R0, dtype=np.float64)
+    k_arr = np.asarray(k, dtype=np.float64)
+    R0_b, k_b = np.broadcast_arrays(R0_arr, k_arr)
+    out = {key: np.empty(R0_b.shape, dtype=np.float64) for key in output_keys}
+
+    indices = list(np.ndindex(R0_b.shape))
+    n_combos = len(indices)
+    if show_progress and n_combos > 1:
+        iterable = tqdm(indices, total=n_combos, desc=f"{label} params")
+        inner_progress = False
+    else:
+        iterable = indices
+        inner_progress = show_progress
+
+    for idx in iterable:
+        result = fn(
+            float(R0_b[idx]),
+            float(k_b[idx]),
+            w,
+            history,
+            show_progress=inner_progress,
+            **fn_kwargs,
+        )
+        for key in output_keys:
+            out[key][idx] = result[key]
+    return out
+
+
+def pmo_uncertain(
+    *,
+    R0: ArrayLike,
+    k: ArrayLike,
+    w: ArrayLike,
+    history: ArrayLike,
+    method: Literal["analytic", "simulation"],
+    prior_sse: float = 0.5,
+    **kwargs,
+) -> PmoUncertainResult:
+    """Bayesian model-averaged probability of major outbreak.
+
+    Combines :func:`pmo_sse` and :func:`pmo_ssi` with a prior probability
+    ``prior_sse`` on the SSE model (so ``1 - prior_sse`` on SSI), via
+    Bayesian model averaging given the observed ``history``. See
+    ``notes/notes.tex`` for the derivation.
+
+    Parameters
+    ----------
+    R0, k
+        Reproduction number and dispersion parameter; scalar or array
+        (broadcast jointly). The same ``(R0, k)`` is used for both models.
+    w
+        Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``.
+    history
+        Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
+        non-negative integers with ``history[0] >= 1``.
+    method
+        ``"analytic"`` for the closed-form Bayes update. Supports
+        histories with cases on day 0 only, on day 0 and one later day
+        (case (i)), or on day 0 and two later days (case (ii)); raises
+        :class:`NotImplementedError` for histories with three or more
+        later non-zero days. ``"simulation"`` for the rejection-sampling
+        estimator (forwarded to :func:`_pmo_uncertain_sim`; takes
+        ``n_sims``, ``threshold``, ``t_max``, ``rng``, ``batch_size``,
+        ``max_attempts``, ``show_progress`` as keyword arguments).
+    prior_sse
+        Prior probability of the SSE model in ``[0, 1]``. Default ``0.5``.
+
+    Returns
+    -------
+    PmoUncertainResult
+        Named tuple ``(pmo, posterior_sse, pmo_sse, pmo_ssi)`` — see
+        :class:`PmoUncertainResult`.
+    """
+    if not 0.0 <= prior_sse <= 1.0:
+        raise ValueError("prior_sse must lie in [0, 1]")
+    w_arr = np.asarray(w, dtype=np.float64)
+    hist_arr = _validate_history(history)
+    scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+
+    if method == "analytic":
+        if kwargs:
+            raise TypeError(
+                f"pmo_uncertain(method='analytic') got unexpected keyword arguments: "
+                f"{sorted(kwargs)}"
+            )
+        if _classify_history(hist_arr)["kind"] == "general":
+            offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
+            raise NotImplementedError(
+                "pmo_uncertain(method='analytic') requires a history with cases on "
+                "day 0 and at most two later days; "
+                f"got non-zero cases on day(s) {offending_days}. "
+                "Use method='simulation'."
+            )
+        result = _pmo_uncertain_analytic(R0, k, w_arr, hist_arr, prior_sse)
+    elif method == "simulation":
+        kwargs["prior_sse"] = prior_sse
+        result = _dispatch_multi(
+            _pmo_uncertain_sim,
+            R0,
+            k,
+            w_arr,
+            hist_arr,
+            "pmo_uncertain",
+            kwargs,
+            output_keys=("pmo", "posterior_sse", "pmo_sse", "pmo_ssi"),
+        )
+    else:
+        raise ValueError(
+            f"pmo_uncertain: method must be 'analytic' or 'simulation', got {method!r}"
+        )
+
+    if scalar_inputs:
+        return PmoUncertainResult(
+            pmo=float(np.asarray(result["pmo"]).reshape(())),
+            posterior_sse=float(np.asarray(result["posterior_sse"]).reshape(())),
+            pmo_sse=float(np.asarray(result["pmo_sse"]).reshape(())),
+            pmo_ssi=float(np.asarray(result["pmo_ssi"]).reshape(())),
+        )
+    return PmoUncertainResult(
+        pmo=result["pmo"],
+        posterior_sse=result["posterior_sse"],
+        pmo_sse=result["pmo_sse"],
+        pmo_ssi=result["pmo_ssi"],
+    )
+
+
+__all__ = ["PmoUncertainResult", "pmo_sse", "pmo_ssi", "pmo_uncertain"]

@@ -304,15 +304,37 @@ factorises into a product of negative-binomial pmfs,
 \end{equation}
 This closed form is available for any history.
 
-\paragraph{SSI model.}  The likelihood involves the latent infectivities
-$(Y_s)_{s=0}^{r-1}$ and is in general not available in closed form.
-For genuinely general histories, an importance-sampling estimate using
-draws from the posterior $p(Y_{0:r-1} \mid I_{0:r})$ produced by the
-MCMC sampler of the previous section is feasible but is not
-implemented here.  Closed forms are however available in the same
-three special cases as for $q_r$ (cases on day~$0$ only, on day~$0$
-and one later day, on day~$0$ and two later days); these are derived
-in \S~\ref{sec:ssi_closed_forms} below.
+\paragraph{SSI model, closed-form cases.}  Closed forms are available in the
+same three special cases as for $q_r$ (cases on day~$0$ only, on day~$0$ and
+one later day, on day~$0$ and two later days); these are derived in
+\S~\ref{sec:ssi_closed_forms} below.
+
+\paragraph{SSI model, general histories.}  The likelihood involves the
+latent infectivities $(Y_s)_{s=0}^{r-1}$ and is in general not available in
+closed form.  Unfolding the SSI generative dependence
+$I_0 \to Y_0 \to I_1 \to Y_1 \to \cdots \to I_r$ as a Markov chain, the
+joint density of latents and observations factorises as
+\begin{equation}\label{eq:joint_ssi}
+  p(Y_{0:r-1},\, I_{1:r} \mid I_0)
+  \;=\; \prod_{t=0}^{r-1} p_Y(Y_t \mid I_t)
+  \,\cdot\,
+  \prod_{t=1}^{r} p_I\!\bigl(I_t \mid Y_{0:t-1}\bigr),
+\end{equation}
+where $p_Y(\,\cdot\, \mid I_t) = \mathrm{Gamma}(\cdot;\, kI_t,\, k)$ is the
+SSI generative density of $Y_t$ given the cohort size on day~$t$, and
+$p_I(\,\cdot\, \mid Y_{0:t-1}) = \mathrm{Poisson}(\cdot;\, R_0
+\sum_{s=1}^{t} w_s Y_{t-s})$.  Marginalising the latents,
+\begin{equation}\label{eq:L_ssi_integral}
+  L_\mathrm{SSI}(I_{1:r} \mid I_0)
+  \;=\; \int \!\prod_{t=0}^{r-1} p_Y(Y_t \mid I_t)
+  \,\prod_{t=1}^{r} p_I(I_t \mid Y_{0:t-1})\, \mathrm{d}Y_{0:r-1}.
+\end{equation}
+Days $s$ with $I_s = 0$ collapse $Y_s$ to a point mass at $0$, and $Y_r$
+does not enter $L_\mathrm{SSI}$ (it would only contribute to $I_{r+1},
+I_{r+2}, \ldots$), so the integration runs effectively over
+$\mathcal{T} = \{t \in \{0,\ldots,r-1\} : I_t > 0\}$.  Three MCMC-based
+estimators of \eqref{eq:L_ssi_integral} are derived in
+\S~\ref{sec:mcmc_evidence}.
 
 \subsection{Simulation-based estimator}
 \label{sec:simulation}
@@ -738,7 +760,8 @@ where, for $a \in \{0, i, j\}$ (with the convention $F_{r-0} = F_r$),
   reduces to \eqref{eq:qr_case_ii}.  When also $I_i \to 0$, the
   exponent on $\beta_i$ in \eqref{eq:qr_case_ii} vanishes and the
   exponent on $\beta_0$ reduces from $-(k I_0 + I_i)$ to $-k I_0$,
-  recovering \eqref{eq:qr_case_i}.  Similarly \eqref{eq:L_ssi_case_iii} reduces to
+  recovering \eqref{eq:qr_case_i}.  Similarly
+  \eqref{eq:L_ssi_case_iii} reduces to
   \eqref{eq:L_ssi_case_ii} and then to \eqref{eq:L_ssi_case_i}.
 \end{remark}
 
@@ -747,5 +770,186 @@ The $c_m$ involve $\Gamma$ factors of size up to
 $k I_0 + I_i + I_j$, so for moderate $I_j$ a log-domain computation
 ($\log\Gamma$, $\mathrm{logsumexp}$) is recommended.  The number of
 sum terms is $I_j + 1$, typically small for the histories of interest.
+
+% ===========================================================================
+\section{MCMC-based estimators of the SSI marginal likelihood}
+\label{sec:mcmc_evidence}
+% ===========================================================================
+
+We describe three estimators of the integral
+\eqref{eq:L_ssi_integral}.  Writing
+$\pi(Y) = \prod_{t \in \mathcal T} p_Y(Y_t \mid I_t)$
+for the integrand's prior factor restricted to the active days
+$\mathcal{T} = \{t \in \{0,\ldots,r-1\} : I_t > 0\}$ (a product of
+independent Gammas, treating the observed cohort sizes $I_t$ as fixed
+shape parameters), and
+$\mathcal L(Y) = \prod_{t=1}^{r} p_I(I_t \mid Y_{0:t-1})$
+for the integrand's likelihood factor, the target is
+\begin{equation}\label{eq:L_def}
+  L_\mathrm{SSI}
+  \;=\; \int \mathcal L(Y)\, \pi(Y)\, \mathrm{d}Y
+  \;=\; \mathbb E_{Y \sim \pi}\!\bigl[\mathcal L(Y)\bigr].
+\end{equation}
+The unnormalised posterior (the joint integrand) is
+$\tilde p(Y) = \mathcal L(Y)\, \pi(Y)$, and the posterior density of the
+latents given the observations is
+$p_\mathrm{post}(Y) = \tilde p(Y) / L_\mathrm{SSI}$.  The MCMC sampler of
+\S~\ref{sec:qr_ssi} produces draws $Y^{p,(j)} \sim p_\mathrm{post}$ for
+$j = 1, \ldots, N_1$.
+
+\subsection{Naive Monte Carlo}
+\label{sec:naive_mc_evidence}
+
+Equation~\eqref{eq:L_def} is itself an expectation under the prior $\pi$,
+so the simplest estimator just averages the conditional likelihood at
+independent draws from $\pi$:
+\begin{equation}\label{eq:L_ssi_naive_mc}
+  \widehat L_\mathrm{SSI}^{\,\mathrm{naive}}
+  \;=\; \frac{1}{N} \sum_{n=1}^{N} \mathcal L\!\bigl(Y^{(n)}\bigr),
+  \qquad Y^{(n)} \stackrel{\mathrm{iid}}{\sim} \pi.
+\end{equation}
+No MCMC trace is needed: drawing $Y^{(n)}$ requires only independent
+Gamma$(kI_t,k)$ samples for each $t \in \mathcal T$.  In log space the
+implementation is
+\begin{equation*}
+  \log \widehat L_\mathrm{SSI}^{\,\mathrm{naive}}
+  \;=\; \operatornamewithlimits{logsumexp}_{n=1,\ldots,N}\!\log \mathcal L(Y^{(n)}) \;-\; \log N.
+\end{equation*}
+
+The estimator is unbiased.  Its relative variance is
+$\mathrm{Var}_\pi[\mathcal L]/(N L_\mathrm{SSI}^2)$, equivalently
+$\bigl(\chi^2(p_\mathrm{post} \,\|\, \pi) + 1\bigr)/N - 1/N$, where
+$\chi^2(p \,\|\, q) = \int (p/q - 1)^2 q$ is the $\chi^2$ divergence.  The
+$\chi^2$ between prior and posterior is small whenever the data are
+weakly informative about the latents — and remarkably, in the SSI model
+this remains true even on moderately informative histories, because the
+prior variance $I_t/k$ scales automatically with the cohort size $I_t$
+and so retains overlap with the posterior.  The estimator becomes
+unreliable only when the data are very informative (e.g.\ long histories
+with substantial incidence at small $k$).
+
+\subsection{Importance sampling}
+\label{sec:is_evidence}
+
+Importance sampling generalises the naive estimator by sampling from a
+proposal $g$ chosen to better cover the posterior:
+\begin{equation}\label{eq:L_ssi_is}
+  \widehat L_\mathrm{SSI}^{\,\mathrm{IS}}
+  \;=\; \frac{1}{N} \sum_{n=1}^{N}
+  \frac{\tilde p\!\bigl(Y^{(n)}\bigr)}{g\!\bigl(Y^{(n)}\bigr)},
+  \qquad Y^{(n)} \stackrel{\mathrm{iid}}{\sim} g.
+\end{equation}
+The estimator is unbiased for any proposal $g$ with $g(Y) > 0$ wherever
+$\tilde p(Y) > 0$; its relative variance is
+$\chi^2(p_\mathrm{post} \,\|\, g)/N$, minimised by taking $g$ as close to
+$p_\mathrm{post}$ as possible.
+
+We take
+\begin{equation}\label{eq:gamma_proposal}
+  g(Y) \;=\; \prod_{t \in \mathcal T} \mathrm{Gamma}(Y_t;\, \alpha_t, \beta_t),
+\end{equation}
+i.e.\ a product of independent Gammas in the same family as the prior,
+with shape and rate parameters fitted by method of moments to the
+per-day marginals of the MCMC posterior trace
+$\{Y^{p,(j)}\}_{j=1}^{N_1}$:
+\begin{equation}\label{eq:mom_fit}
+  \alpha_t \;=\; \frac{\bar Y_t^{\,2}}{S_t^2},
+  \qquad
+  \beta_t  \;=\; \frac{\bar Y_t}{S_t^2},
+  \qquad t \in \mathcal T,
+\end{equation}
+where $\bar Y_t$ and $S_t^2$ are the sample mean and (unbiased) sample
+variance of $\{Y_t^{p,(j)}\}_j$.  Matching the proposal family to the
+prior keeps importance weights bounded; matching its marginals to the
+MCMC posterior makes it close to $p_\mathrm{post}$ marginally.
+
+\begin{remark}[Caveat: posterior correlations]
+  Equation~\eqref{eq:gamma_proposal} is a product proposal, while the
+  joint posterior of $Y_\mathcal T$ may have non-trivial correlations
+  arising from the shared force-of-infection terms.  When such
+  correlations are strong, $\chi^2(p_\mathrm{post} \,\|\, g)$ does not
+  shrink to zero in the large-data limit and the IS estimator's variance
+  remains bounded below by that mismatch.  Bridge sampling
+  (\S~\ref{sec:bridge_evidence}) is more forgiving of proposal
+  mismatch.
+\end{remark}
+
+\subsection{Bridge sampling}
+\label{sec:bridge_evidence}
+
+Bridge sampling uses draws from \emph{both} the proposal $g$ and the
+posterior $p_\mathrm{post}$, weighted by a bridge function $\alpha$.
+The starting identity (Meng \& Wong, 1996) is the algebraic equality
+\begin{equation}\label{eq:bridge_identity}
+  L_\mathrm{SSI}
+  \;=\;
+  \frac{\mathbb E_{Y \sim g}\!\bigl[\tilde p(Y)\, \alpha(Y)\bigr]}
+       {\mathbb E_{Y \sim p_\mathrm{post}}\!\bigl[g(Y)\, \alpha(Y)\bigr]},
+\end{equation}
+valid for any $\alpha$ such that
+$0 < \int g(Y) \tilde p(Y) \alpha(Y)\, \mathrm{d}Y < \infty$.  The
+identity is verified by writing the numerator as
+$\int \tilde p\, g\, \alpha\, \mathrm{d}Y$ and the denominator as
+$L_\mathrm{SSI}^{-1} \int \tilde p\, g\, \alpha\, \mathrm{d}Y$.  Replacing
+the expectations by Monte Carlo averages over
+$\{Y^{q,(i)}\}_{i=1}^{N_2} \stackrel{\mathrm{iid}}{\sim} g$ and
+$\{Y^{p,(j)}\}_{j=1}^{N_1} \sim p_\mathrm{post}$ (the MCMC trace) gives
+the bridge-sampling estimator.
+
+The asymptotic variance of $\widehat L_\mathrm{SSI}$ depends on the
+choice of $\alpha$.  Minimising it (Meng \& Wong, 1996) yields the
+optimal bridge
+\begin{equation}\label{eq:alpha_star}
+  \alpha^*(Y)
+  \;=\;
+  \frac{C}{s_1\, g(Y) + s_2\, \tilde p(Y) / L_\mathrm{SSI}},
+\end{equation}
+where $s_1 = N_1/(N_1 + N_2)$, $s_2 = N_2/(N_1 + N_2)$, and $C$ is any
+non-zero constant (any rescaling of $\alpha$ cancels between numerator
+and denominator of \eqref{eq:bridge_identity}).  The optimal bridge
+depends on the unknown $L_\mathrm{SSI}$; substituting
+\eqref{eq:alpha_star} into \eqref{eq:bridge_identity} and replacing the
+expectations by Monte Carlo averages produces the fixed-point identity
+\begin{equation}\label{eq:L_ssi_bridge}
+  L_\mathrm{SSI}
+  \;=\;
+  \frac{\displaystyle \frac{1}{N_2}\sum_{i=1}^{N_2}
+        \frac{\tilde p(Y^{q,(i)})}{s_1\, g(Y^{q,(i)}) + s_2\, \tilde p(Y^{q,(i)})/L_\mathrm{SSI}}}
+       {\displaystyle \frac{1}{N_1}\sum_{j=1}^{N_1}
+        \frac{g(Y^{p,(j)})}{s_1\, g(Y^{p,(j)}) + s_2\, \tilde p(Y^{p,(j)})/L_\mathrm{SSI}}}.
+\end{equation}
+Solving \eqref{eq:L_ssi_bridge} for $L_\mathrm{SSI}$ requires iterating
+the right-hand side from an initial guess.  Bridge sampling has lower
+(or equal) asymptotic variance than importance sampling with the same
+proposal, and the variance bound is governed by a symmetrised
+divergence rather than $\chi^2(p_\mathrm{post} \,\|\, g)$, so it is
+significantly more robust to proposal--posterior mismatch.
+
+In practice we work entirely in log space for numerical stability.
+Define the log importance ratios at the two sample sets,
+\begin{equation*}
+  \ell_q^{(i)} \;=\; \log \tilde p(Y^{q,(i)}) - \log g(Y^{q,(i)}),
+  \qquad
+  \ell_p^{(j)} \;=\; \log \tilde p(Y^{p,(j)}) - \log g(Y^{p,(j)}).
+\end{equation*}
+Multiplying numerator and denominator of \eqref{eq:L_ssi_bridge} by
+$1/g(Y^{q,(i)})$ and $1/g(Y^{p,(j)})$ respectively and taking logs gives
+the log-space iteration
+\begin{multline}\label{eq:L_ssi_bridge_logspace}
+  \log L^{(t+1)} \;=\;
+  \operatornamewithlimits{logsumexp}_{i=1,\ldots,N_2}
+    \!\Bigl[\,\ell_q^{(i)} -
+            \mathrm{lse}\bigl(\log s_1,\, \log s_2 + \ell_q^{(i)} - \log L^{(t)}\bigr)\Bigr]
+  - \log N_2 \\
+  \;-\;
+  \operatornamewithlimits{logsumexp}_{j=1,\ldots,N_1}
+    \!\Bigl[\,-\mathrm{lse}\bigl(\log s_1,\, \log s_2 + \ell_p^{(j)} - \log L^{(t)}\bigr)\Bigr]
+  + \log N_1,
+\end{multline}
+where $\mathrm{lse}(a,b) = \log(e^a + e^b)$.  We use the same Gamma
+proposal $g$ as in \S~\ref{sec:is_evidence}, initialise $\log L^{(0)}$
+at the median of $\{\ell_q^{(i)}\}_i$, and iterate
+\eqref{eq:L_ssi_bridge_logspace} until $\log L^{(t)}$ stops changing
+appreciably.
 
 \end{document}

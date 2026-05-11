@@ -35,13 +35,15 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
+from sse_ssi_pmo._history import classify_history
 from sse_ssi_pmo.extinction import (
-    _classify_history,
     _pmo_sse_analytic,
     _pmo_ssi_analytic,
     _pmo_ssi_mcmc,
     _pmo_uncertain_analytic,
+    _pmo_uncertain_mcmc,
 )
+from sse_ssi_pmo.likelihood import SsiEvidenceMethod
 from sse_ssi_pmo.simulation import _pmo_sse_sim, _pmo_ssi_sim, _pmo_uncertain_sim
 
 
@@ -208,7 +210,7 @@ def pmo_ssi(
             raise TypeError(
                 f"pmo_ssi(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
-        if _classify_history(hist_arr)["kind"] == "general":
+        if classify_history(hist_arr)["kind"] == "general":
             offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
             raise ValueError(
                 "pmo_ssi(method='analytic') requires a history with cases on "
@@ -282,8 +284,9 @@ def pmo_uncertain(
     k: ArrayLike,
     w: ArrayLike,
     history: ArrayLike,
-    method: Literal["analytic", "simulation"],
+    method: Literal["analytic", "simulation", "mcmc"],
     prior_sse: float = 0.5,
+    ssi_evidence_method: SsiEvidenceMethod = "bridge",
     **kwargs,
 ) -> PmoUncertainResult:
     """Bayesian model-averaged probability of major outbreak.
@@ -312,8 +315,20 @@ def pmo_uncertain(
         estimator (forwarded to :func:`_pmo_uncertain_sim`; takes
         ``n_sims``, ``threshold``, ``t_max``, ``rng``, ``batch_size``,
         ``max_attempts``, ``show_progress`` as keyword arguments).
+        ``"mcmc"`` for an MCMC-based estimator that handles any history:
+        SSE stays closed-form; SSI uses ``fit_ssi`` once for the trace and
+        reuses it for both the SSI PMO and the SSI marginal log-likelihood.
+        Takes ``ssi_evidence_method``, ``rng``, ``n_evidence_samples`` plus
+        ``pm.sample`` keyword arguments (``draws``, ``tune``, ``chains``,
+        ``thin``, ``progressbar``, ``target_accept``, …).
     prior_sse
         Prior probability of the SSE model in ``[0, 1]``. Default ``0.5``.
+    ssi_evidence_method
+        Estimator used for ``log L_SSI`` under ``method='mcmc'``: ``"bridge"``
+        (default; Meng-Wong bridge sampling), ``"importance_sampling"``, or
+        ``"naive"`` (Gamma-prior Monte Carlo, no MCMC trace required for the
+        likelihood part — the trace is still run for the SSI PMO). Ignored
+        when ``method`` is ``"analytic"`` or ``"simulation"``.
 
     Returns
     -------
@@ -333,13 +348,13 @@ def pmo_uncertain(
                 f"pmo_uncertain(method='analytic') got unexpected keyword arguments: "
                 f"{sorted(kwargs)}"
             )
-        if _classify_history(hist_arr)["kind"] == "general":
+        if classify_history(hist_arr)["kind"] == "general":
             offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
             raise NotImplementedError(
                 "pmo_uncertain(method='analytic') requires a history with cases on "
                 "day 0 and at most two later days; "
                 f"got non-zero cases on day(s) {offending_days}. "
-                "Use method='simulation'."
+                "Use method='simulation' or method='mcmc'."
             )
         result = _pmo_uncertain_analytic(R0, k, w_arr, hist_arr, prior_sse)
     elif method == "simulation":
@@ -354,9 +369,22 @@ def pmo_uncertain(
             kwargs,
             output_keys=("pmo", "posterior_sse", "pmo_sse", "pmo_ssi"),
         )
+    elif method == "mcmc":
+        kwargs["prior_sse"] = prior_sse
+        kwargs["ssi_evidence_method"] = ssi_evidence_method
+        result = _dispatch_multi(
+            _pmo_uncertain_mcmc,
+            R0,
+            k,
+            w_arr,
+            hist_arr,
+            "pmo_uncertain_mcmc",
+            kwargs,
+            output_keys=("pmo", "posterior_sse", "pmo_sse", "pmo_ssi"),
+        )
     else:
         raise ValueError(
-            f"pmo_uncertain: method must be 'analytic' or 'simulation', got {method!r}"
+            f"pmo_uncertain: method must be 'analytic', 'simulation', or 'mcmc', got {method!r}"
         )
 
     if scalar_inputs:

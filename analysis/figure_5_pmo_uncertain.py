@@ -3,9 +3,11 @@
 Grouped bar chart with three analytic bars per history — SSE, SSI, and the
 Bayesian model-averaged PMO from ``pmo_uncertain``.  Simulation x markers
 are overlaid for all three bars as one cross-check; open-circle MCMC
-markers are overlaid at the SSI bar position as a second cross-check.
-The posterior probability of SSE (from ``pmo_uncertain``) is annotated
-below each cluster, illustrating how the data shifts the prior.
+markers are overlaid at both the SSI and model-averaged bars as a second
+cross-check (``method='mcmc'`` runs MCMC once and reuses the trace for
+both the SSI PMO and the SSI marginal likelihood that feeds Bayesian model
+averaging). The posterior probability of SSE (from ``pmo_uncertain``) is
+annotated below each cluster, illustrating how the data shifts the prior.
 
 Loads pre-computed results from results/fig5_pmo_uncertain.csv (run
 results_5_pmo_uncertain.py first).
@@ -112,6 +114,17 @@ def main() -> None:
         linewidths=1.5,
         zorder=3,
         label="Model-averaged" + SIM_LABEL_SUFFIX,
+    )
+    ax.scatter(
+        x + bar_width,
+        df["uncertain_mcmc"],
+        facecolors="none",
+        edgecolors=UNCERTAIN_COLOUR,
+        marker="o",
+        s=sim_marker_size,
+        linewidths=1.5,
+        zorder=3,
+        label="Model-averaged (MCMC)",
     )
 
     ax.set_xticks(x)

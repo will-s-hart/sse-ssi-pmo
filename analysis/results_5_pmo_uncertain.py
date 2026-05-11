@@ -57,6 +57,7 @@ def main() -> None:
     ssi_analytic = np.empty(n)
     ssi_mcmc = np.empty(n)
     uncertain_analytic = np.empty(n)
+    uncertain_mcmc = np.empty(n)
     sse_sim = np.empty(n)
     ssi_sim = np.empty(n)
     uncertain_sim = np.empty(n)
@@ -84,6 +85,20 @@ def main() -> None:
         )
         uncertain_analytic[i] = analytic_result.pmo
         posterior_sse[i] = analytic_result.posterior_sse
+
+        uncertain_mcmc[i] = pmo_uncertain(
+            R0=R0,
+            k=K,
+            w=w,
+            history=history,
+            method="mcmc",
+            prior_sse=PRIOR_SSE,
+            draws=MCMC_DRAWS,
+            tune=MCMC_TUNE,
+            chains=MCMC_CHAINS,
+            target_accept=0.99,
+            progressbar=False,
+        ).pmo
 
         sse_sim[i] = pmo_sse(
             R0=R0,
@@ -133,6 +148,7 @@ def main() -> None:
             "ssi_analytic": ssi_analytic,
             "ssi_mcmc": ssi_mcmc,
             "uncertain_analytic": uncertain_analytic,
+            "uncertain_mcmc": uncertain_mcmc,
             "sse_sim": sse_sim,
             "ssi_sim": ssi_sim,
             "uncertain_sim": uncertain_sim,

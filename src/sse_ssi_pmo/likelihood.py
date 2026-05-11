@@ -39,7 +39,6 @@ from numpy.typing import ArrayLike, NDArray
 from sse_ssi_pmo._history import classify_history, w_at
 from sse_ssi_pmo.serial_interval import cumulative
 
-
 # ---------------------------------------------------------------------------
 # helpers shared between SSI marginal-likelihood estimators
 # ---------------------------------------------------------------------------
@@ -114,9 +113,7 @@ def _log_proposal_Y(
     """Sum over columns of ``log Gamma(alpha_t, beta_t)`` proposal pdf at ``Y_t``."""
     out = np.zeros(Y_active.shape[0], dtype=np.float64)
     for col in range(Y_active.shape[1]):
-        out += scipy.stats.gamma.logpdf(
-            Y_active[:, col], a=alpha[col], scale=1.0 / beta[col]
-        )
+        out += scipy.stats.gamma.logpdf(Y_active[:, col], a=alpha[col], scale=1.0 / beta[col])
     return out
 
 
@@ -255,7 +252,7 @@ def _log_likelihood_sse_general(
 
 
 # ---------------------------------------------------------------------------
-# SSI log-likelihood: closed forms for cases (i)–(iii)
+# SSI log-likelihood: closed forms for cases (i)-(iii)
 # ---------------------------------------------------------------------------
 
 
@@ -425,13 +422,11 @@ def _log_likelihood_ssi_bridge(
     for col in range(prior_idx.size):
         Y_q[:, col] = rng.gamma(shape=alpha[col], scale=1.0 / beta[col], size=N2)
 
-    log_p_tilde_p = (
-        _log_lik_given_Y(Y_p, R0, w, history, prior_idx)
-        + _log_prior_Y(Y_p, k, history, prior_idx)
+    log_p_tilde_p = _log_lik_given_Y(Y_p, R0, w, history, prior_idx) + _log_prior_Y(
+        Y_p, k, history, prior_idx
     )
-    log_p_tilde_q = (
-        _log_lik_given_Y(Y_q, R0, w, history, prior_idx)
-        + _log_prior_Y(Y_q, k, history, prior_idx)
+    log_p_tilde_q = _log_lik_given_Y(Y_q, R0, w, history, prior_idx) + _log_prior_Y(
+        Y_q, k, history, prior_idx
     )
     log_g_p = _log_proposal_Y(Y_p, alpha, beta)
     log_g_q = _log_proposal_Y(Y_q, alpha, beta)

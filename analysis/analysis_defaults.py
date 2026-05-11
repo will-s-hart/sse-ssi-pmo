@@ -59,3 +59,8 @@ FIG5_PRIOR_SSE: float = 0.5
 FIG5_SIM_N: int = 5_000
 FIG5_SIM_BATCH: int = 10_000
 FIG5_SIM_MAX_ATTEMPTS: int = 8_000_000
+
+# --- figure 6 (PMO error under model misspecification vs. averaging) ---
+FIG6_PRIOR_SSE: float = 0.5
+FIG6_HISTORY_LENGTHS: list[int] = [2, 3]
+FIG6_N_SIM: int = 5000

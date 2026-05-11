@@ -20,11 +20,22 @@ simulation:
 All functions broadcast over ``R0`` and ``k`` (scalar or array). Scalar
 inputs return a Python ``float`` (or float-valued NamedTuple for
 ``pmo_uncertain``); array inputs return a NumPy array (or array-valued
-NamedTuple) of the broadcast shape. The simulation and MCMC paths run the
-inner backend once per ``(R0, k)`` combination and, when
-``show_progress=True`` and there is more than one combination, wrap the
-parameter-combination loop with a single ``tqdm`` bar (passing
-``show_progress=False`` to each inner call).
+NamedTuple) of the broadcast shape.
+
+``history`` may also be a 2-D ``(M, L)`` array (or list/tuple of
+equal-length 1-D arrays). The return then gains a *leading* length-``M``
+axis (still wrapped in :class:`PmoUncertainResult` for
+``pmo_uncertain``). For ``method='simulation'`` of :func:`pmo_ssi` and
+:func:`pmo_uncertain`, all rows must share the same ``I_0`` and the
+backend runs a single rejection-sampling pass that matches each
+simulated trajectory against every history at once — typically far
+cheaper than running ``M`` independent passes.
+
+The simulation and MCMC paths run the inner backend once per
+``(R0, k)`` combination and, when ``show_progress=True`` and there is
+more than one combination, wrap the parameter-combination loop with a
+single ``tqdm`` bar (passing ``show_progress=False`` to each inner
+call).
 """
 
 from __future__ import annotations
@@ -44,7 +55,11 @@ from sse_ssi_pmo.extinction import (
     _pmo_uncertain_mcmc,
 )
 from sse_ssi_pmo.likelihood import SsiEvidenceMethod
-from sse_ssi_pmo.simulation import _pmo_sse_sim, _pmo_ssi_sim, _pmo_uncertain_sim
+from sse_ssi_pmo.simulation import (
+    _pmo_sse_sim,
+    _pmo_ssi_sim_multi,
+    _pmo_uncertain_sim_multi,
+)
 
 
 class PmoUncertainResult(NamedTuple):
@@ -53,8 +68,9 @@ class PmoUncertainResult(NamedTuple):
     ``pmo`` is the model-averaged probability of a major outbreak;
     ``posterior_sse`` is the posterior probability of the SSE model given
     the observed history; ``pmo_sse`` and ``pmo_ssi`` are the per-model
-    PMOs. Each field is a Python ``float`` for scalar ``(R0, k)`` inputs
-    and a NumPy array of the broadcast shape otherwise.
+    PMOs. For a 1-D ``history`` and scalar ``(R0, k)``, each field is a
+    Python ``float``; an array-valued ``(R0, k)`` adds the broadcast
+    shape; a 2-D ``history`` adds a leading length-``M`` axis.
     """
 
     pmo: float | NDArray[np.float64]
@@ -63,58 +79,167 @@ class PmoUncertainResult(NamedTuple):
     pmo_ssi: float | NDArray[np.float64]
 
 
-def _validate_history(history: ArrayLike) -> NDArray[np.int64]:
-    arr = np.asarray(history, dtype=np.int64)
-    if arr.ndim != 1 or arr.size == 0:
-        raise ValueError("history must be a non-empty 1-D array of integers")
-    if arr.min() < 0:
+def _validate_histories(history: ArrayLike) -> tuple[NDArray[np.int64], bool]:
+    """Validate ``history`` as a 1-D or 2-D array and return ``(hist_2d, was_1d)``.
+
+    Accepts a 1-D array (single history) or a 2-D array / list of
+    equal-length 1-D arrays. Single-history input is reshaped to ``(1, L)``
+    with ``was_1d = True``; multi-history input is kept as ``(M, L)`` with
+    ``was_1d = False``. Validates that every row is non-negative and starts
+    with ``I_0 >= 1``. Raises ``ValueError`` on ragged lists, ``ndim`` outside
+    {1, 2}, or empty input.
+    """
+    try:
+        arr = np.asarray(history, dtype=np.int64)
+    except (ValueError, TypeError) as err:
+        raise ValueError(
+            "history must be a 1-D array or an equal-length 2-D / list-of-lists; "
+            "for ragged inputs, split by length and call once per group."
+        ) from err
+    if arr.ndim == 1:
+        if arr.size == 0:
+            raise ValueError("history must be a non-empty 1-D array of integers")
+        hist_2d = arr.reshape(1, -1)
+        was_1d = True
+    elif arr.ndim == 2:
+        if arr.size == 0 or arr.shape[0] == 0 or arr.shape[1] == 0:
+            raise ValueError("history must be a non-empty 2-D (M, L) array of integers")
+        hist_2d = arr
+        was_1d = False
+    else:
+        raise ValueError(
+            f"history must be 1-D or 2-D (got {arr.ndim}-D); for ragged inputs, "
+            "split by length and call once per group."
+        )
+    if hist_2d.min() < 0:
         raise ValueError("history entries must be non-negative")
-    if arr[0] < 1:
-        raise ValueError("history must have at least one case on day 0 (history[0] >= 1)")
-    return arr
+    if (hist_2d[:, 0] < 1).any():
+        raise ValueError("every history row must have history[0] >= 1")
+    return hist_2d, was_1d
 
 
-def _dispatch(
+def _broadcast_R0_k(R0: ArrayLike, k: ArrayLike) -> tuple[NDArray, NDArray, tuple[int, ...]]:
+    R0_arr = np.asarray(R0, dtype=np.float64)
+    k_arr = np.asarray(k, dtype=np.float64)
+    R0_b, k_b = np.broadcast_arrays(R0_arr, k_arr)
+    return R0_b, k_b, R0_b.shape
+
+
+def _setup_combo_iter(
+    indices: list[tuple[int, ...]],
+    *,
+    show_progress: bool,
+    label: str,
+):
+    n_combos = len(indices)
+    if show_progress and n_combos > 1:
+        return tqdm(indices, total=n_combos, desc=f"{label} params"), False
+    return indices, show_progress
+
+
+def _dispatch_h_scalar(
     fn,
     R0: ArrayLike,
     k: ArrayLike,
     w: NDArray[np.float64],
-    history: NDArray[np.int64],
+    hist_2d: NDArray[np.int64],
     label: str,
     fn_kwargs: dict,
+    *,
+    native_multi: bool,
 ) -> NDArray[np.float64]:
-    """Broadcast ``(R0, k)`` and call ``fn`` once per combination.
+    """Drive a scalar-returning backend over ``(R0, k)`` and histories.
 
-    ``show_progress`` is consumed here: with multiple combinations and
-    ``show_progress=True``, wrap the outer loop in a single ``tqdm`` and
-    silence the inner per-call bars. With one combination, pass
-    ``show_progress`` through unchanged.
+    With ``native_multi=True``, ``fn(R0, k, w, hist_2d, ...)`` returns a
+    ``(M,)`` array per ``(R0, k)`` combination. Otherwise ``fn`` is
+    single-history (``fn(R0, k, w, hist_1d, ...) -> scalar``) and we loop
+    over rows. Output shape is ``(M, *broadcast(R0, k).shape)``.
     """
     show_progress = fn_kwargs.pop("show_progress", False)
-    R0_arr = np.asarray(R0, dtype=np.float64)
-    k_arr = np.asarray(k, dtype=np.float64)
-    R0_b, k_b = np.broadcast_arrays(R0_arr, k_arr)
-    out = np.empty(R0_b.shape, dtype=np.float64)
-
-    indices = list(np.ndindex(R0_b.shape))
-    n_combos = len(indices)
-    if show_progress and n_combos > 1:
-        iterable = tqdm(indices, total=n_combos, desc=f"{label} params")
-        inner_progress = False
-    else:
-        iterable = indices
-        inner_progress = show_progress
-
-    for idx in iterable:
-        out[idx] = fn(
-            float(R0_b[idx]),
-            float(k_b[idx]),
-            w,
-            history,
-            show_progress=inner_progress,
-            **fn_kwargs,
-        )
+    R0_b, k_b, shape = _broadcast_R0_k(R0, k)
+    M = hist_2d.shape[0]
+    out = np.empty((M, *shape), dtype=np.float64)
+    indices = list(np.ndindex(shape))
+    iterable, inner_progress = _setup_combo_iter(indices, show_progress=show_progress, label=label)
+    for combo in iterable:
+        if native_multi:
+            row = fn(
+                float(R0_b[combo]),
+                float(k_b[combo]),
+                w,
+                hist_2d,
+                show_progress=inner_progress,
+                **fn_kwargs,
+            )
+            out[(slice(None), *combo)] = row
+        else:
+            for m in range(M):
+                out[(m, *combo)] = fn(
+                    float(R0_b[combo]),
+                    float(k_b[combo]),
+                    w,
+                    hist_2d[m],
+                    show_progress=inner_progress,
+                    **fn_kwargs,
+                )
     return out
+
+
+def _dispatch_h_dict(
+    fn,
+    R0: ArrayLike,
+    k: ArrayLike,
+    w: NDArray[np.float64],
+    hist_2d: NDArray[np.int64],
+    label: str,
+    fn_kwargs: dict,
+    output_keys: tuple[str, ...],
+    *,
+    native_multi: bool,
+) -> dict[str, NDArray[np.float64]]:
+    """Dict-returning analogue of :func:`_dispatch_h_scalar`."""
+    show_progress = fn_kwargs.pop("show_progress", False)
+    R0_b, k_b, shape = _broadcast_R0_k(R0, k)
+    M = hist_2d.shape[0]
+    out = {key: np.empty((M, *shape), dtype=np.float64) for key in output_keys}
+    indices = list(np.ndindex(shape))
+    iterable, inner_progress = _setup_combo_iter(indices, show_progress=show_progress, label=label)
+    for combo in iterable:
+        if native_multi:
+            row = fn(
+                float(R0_b[combo]),
+                float(k_b[combo]),
+                w,
+                hist_2d,
+                show_progress=inner_progress,
+                **fn_kwargs,
+            )
+            for key in output_keys:
+                out[key][(slice(None), *combo)] = row[key]
+        else:
+            for m in range(M):
+                row = fn(
+                    float(R0_b[combo]),
+                    float(k_b[combo]),
+                    w,
+                    hist_2d[m],
+                    show_progress=inner_progress,
+                    **fn_kwargs,
+                )
+                for key in output_keys:
+                    out[key][(m, *combo)] = row[key]
+    return out
+
+
+def _collapse_leading(
+    arr: NDArray[np.float64], *, was_1d: bool, scalar_inputs: bool
+) -> float | NDArray[np.float64]:
+    """Restore the original return shape after a dispatch that always added a leading M axis."""
+    if was_1d:
+        arr = arr[0]
+    if scalar_inputs and was_1d:
+        return float(np.asarray(arr).reshape(()))
+    return arr
 
 
 def pmo_sse(
@@ -138,32 +263,38 @@ def pmo_sse(
         treated as a non-negative 1-D array (need not sum to exactly 1, but
         any residual mass beyond ``len(w)`` is taken to be zero).
     history
-        Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
-        non-negative integers with ``history[0] >= 1``.
+        Observed incidence as either a 1-D array
+        ``(I_0, I_1, ..., I_r)`` or a 2-D ``(M, L)`` array (or list of
+        equal-length 1-D arrays) stacking ``M`` histories. Non-negative
+        integers, every row's first entry must be ``>= 1``.
     method
         ``"analytic"`` for the closed-form ``1 - q ** Lambda``;
         ``"simulation"`` for a Monte-Carlo estimate (forwarded to the SSE
         simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
-        ``rng``, ``show_progress`` as keyword arguments).
+        ``rng``, ``show_progress`` as keyword arguments). Multi-history
+        input loops over rows (SSE has no shared-work payoff).
     """
     w_arr = np.asarray(w, dtype=np.float64)
-    hist_arr = _validate_history(history)
+    hist_2d, was_1d = _validate_histories(history)
     scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+    M = hist_2d.shape[0]
 
     if method == "analytic":
         if kwargs:
             raise TypeError(
                 f"pmo_sse(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
-        out = _pmo_sse_analytic(R0, k, w_arr, hist_arr)
+        # _pmo_sse_analytic broadcasts over (R0, k) internally; loop over histories.
+        per_row = [_pmo_sse_analytic(R0, k, w_arr, hist_2d[m]) for m in range(M)]
+        out = np.stack([np.asarray(r, dtype=np.float64) for r in per_row], axis=0)
     elif method == "simulation":
-        out = _dispatch(_pmo_sse_sim, R0, k, w_arr, hist_arr, "pmo_sse", kwargs)
+        out = _dispatch_h_scalar(
+            _pmo_sse_sim, R0, k, w_arr, hist_2d, "pmo_sse", kwargs, native_multi=False
+        )
     else:
         raise ValueError(f"pmo_sse: method must be 'analytic' or 'simulation', got {method!r}")
 
-    if scalar_inputs:
-        return float(np.asarray(out).reshape(()))
-    return out
+    return _collapse_leading(out, was_1d=was_1d, scalar_inputs=scalar_inputs)
 
 
 def pmo_ssi(
@@ -185,8 +316,8 @@ def pmo_ssi(
     w
         Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``.
     history
-        Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
-        non-negative integers with ``history[0] >= 1``.
+        Observed incidence as a 1-D array or a 2-D ``(M, L)`` array of
+        histories (see :func:`pmo_sse` for the convention).
     method
         ``"analytic"`` for the closed-form solution. Supports histories
         with cases on day 0 only, on day 0 and one later day (case (i)),
@@ -195,87 +326,50 @@ def pmo_ssi(
         days. ``"simulation"`` for a Monte-Carlo estimate (forwarded to the
         SSI simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
         ``rng``, ``batch_size``, ``max_attempts``, ``show_progress`` as
-        keyword arguments).
+        keyword arguments). For 2-D ``history`` the simulation path uses
+        the shared-rejection-sampling backend, which requires all rows to
+        share the same ``I_0`` and produces all ``M`` per-history PMOs in
+        one batched pass.
         ``"mcmc"`` for a Monte-Carlo estimate via MCMC over the latent
         infectivities (see ``notes/notes.tex``); keyword arguments are
         forwarded to ``pm.sample`` (e.g. ``draws``, ``tune``, ``chains``,
         ``progressbar``) plus ``thin`` for posterior thinning.
     """
     w_arr = np.asarray(w, dtype=np.float64)
-    hist_arr = _validate_history(history)
+    hist_2d, was_1d = _validate_histories(history)
     scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+    M = hist_2d.shape[0]
 
     if method == "analytic":
         if kwargs:
             raise TypeError(
                 f"pmo_ssi(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
-        if classify_history(hist_arr)["kind"] == "general":
-            offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
-            raise ValueError(
-                "pmo_ssi(method='analytic') requires a history with cases on "
-                "day 0 and at most two later days; "
-                f"got non-zero cases on day(s) {offending_days}. "
-                "Use method='simulation' or method='mcmc'."
-            )
-        out = _pmo_ssi_analytic(R0, k, w_arr, hist_arr)
+        for m in range(M):
+            if classify_history(hist_2d[m])["kind"] == "general":
+                offending_days = (np.flatnonzero(hist_2d[m, 1:] != 0) + 1).tolist()
+                raise ValueError(
+                    "pmo_ssi(method='analytic') requires a history with cases on "
+                    "day 0 and at most two later days; "
+                    f"row {m} has non-zero cases on day(s) {offending_days}. "
+                    "Use method='simulation' or method='mcmc'."
+                )
+        per_row = [_pmo_ssi_analytic(R0, k, w_arr, hist_2d[m]) for m in range(M)]
+        out = np.stack([np.asarray(r, dtype=np.float64) for r in per_row], axis=0)
     elif method == "simulation":
-        out = _dispatch(_pmo_ssi_sim, R0, k, w_arr, hist_arr, "pmo_ssi", kwargs)
+        out = _dispatch_h_scalar(
+            _pmo_ssi_sim_multi, R0, k, w_arr, hist_2d, "pmo_ssi", kwargs, native_multi=True
+        )
     elif method == "mcmc":
-        out = _dispatch(_pmo_ssi_mcmc, R0, k, w_arr, hist_arr, "pmo_ssi_mcmc", kwargs)
+        out = _dispatch_h_scalar(
+            _pmo_ssi_mcmc, R0, k, w_arr, hist_2d, "pmo_ssi_mcmc", kwargs, native_multi=False
+        )
     else:
         raise ValueError(
             f"pmo_ssi: method must be 'analytic', 'simulation', or 'mcmc', got {method!r}"
         )
 
-    if scalar_inputs:
-        return float(np.asarray(out).reshape(()))
-    return out
-
-
-def _dispatch_multi(
-    fn,
-    R0: ArrayLike,
-    k: ArrayLike,
-    w: NDArray[np.float64],
-    history: NDArray[np.int64],
-    label: str,
-    fn_kwargs: dict,
-    output_keys: tuple[str, ...],
-) -> dict[str, NDArray[np.float64]]:
-    """Like :func:`_dispatch` but ``fn`` returns a dict per ``(R0, k)`` call.
-
-    Allocates one broadcast-shaped array per key in ``output_keys`` and
-    fills them from the per-call dicts. Progress-bar handling matches
-    :func:`_dispatch`.
-    """
-    show_progress = fn_kwargs.pop("show_progress", False)
-    R0_arr = np.asarray(R0, dtype=np.float64)
-    k_arr = np.asarray(k, dtype=np.float64)
-    R0_b, k_b = np.broadcast_arrays(R0_arr, k_arr)
-    out = {key: np.empty(R0_b.shape, dtype=np.float64) for key in output_keys}
-
-    indices = list(np.ndindex(R0_b.shape))
-    n_combos = len(indices)
-    if show_progress and n_combos > 1:
-        iterable = tqdm(indices, total=n_combos, desc=f"{label} params")
-        inner_progress = False
-    else:
-        iterable = indices
-        inner_progress = show_progress
-
-    for idx in iterable:
-        result = fn(
-            float(R0_b[idx]),
-            float(k_b[idx]),
-            w,
-            history,
-            show_progress=inner_progress,
-            **fn_kwargs,
-        )
-        for key in output_keys:
-            out[key][idx] = result[key]
-    return out
+    return _collapse_leading(out, was_1d=was_1d, scalar_inputs=scalar_inputs)
 
 
 def pmo_uncertain(
@@ -304,23 +398,25 @@ def pmo_uncertain(
     w
         Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``.
     history
-        Observed incidence ``(I_0, I_1, ..., I_r)`` as a 1-D array of
-        non-negative integers with ``history[0] >= 1``.
+        Observed incidence as a 1-D array or a 2-D ``(M, L)`` array of
+        histories (see :func:`pmo_sse` for the convention).
     method
         ``"analytic"`` for the closed-form Bayes update. Supports
         histories with cases on day 0 only, on day 0 and one later day
         (case (i)), or on day 0 and two later days (case (ii)); raises
         :class:`NotImplementedError` for histories with three or more
         later non-zero days. ``"simulation"`` for the rejection-sampling
-        estimator (forwarded to :func:`_pmo_uncertain_sim`; takes
-        ``n_sims``, ``threshold``, ``t_max``, ``rng``, ``batch_size``,
-        ``max_attempts``, ``show_progress`` as keyword arguments).
+        estimator. For 2-D ``history`` the simulation path uses the
+        shared-rejection-sampling backend (requires all rows to share the
+        same ``I_0``); for 1-D it falls through the same backend with
+        ``M = 1``.
         ``"mcmc"`` for an MCMC-based estimator that handles any history:
-        SSE stays closed-form; SSI uses ``fit_ssi`` once for the trace and
-        reuses it for both the SSI PMO and the SSI marginal log-likelihood.
-        Takes ``ssi_evidence_method``, ``rng``, ``n_evidence_samples`` plus
-        ``pm.sample`` keyword arguments (``draws``, ``tune``, ``chains``,
-        ``thin``, ``progressbar``, ``target_accept``, …).
+        SSE stays closed-form; SSI uses ``fit_ssi`` once per row for the
+        trace and reuses it for both the SSI PMO and the SSI marginal
+        log-likelihood. Takes ``ssi_evidence_method``, ``rng``,
+        ``n_evidence_samples`` plus ``pm.sample`` keyword arguments
+        (``draws``, ``tune``, ``chains``, ``thin``, ``progressbar``,
+        ``target_accept``, …).
     prior_sse
         Prior probability of the SSE model in ``[0, 1]``. Default ``0.5``.
     ssi_evidence_method
@@ -339,8 +435,10 @@ def pmo_uncertain(
     if not 0.0 <= prior_sse <= 1.0:
         raise ValueError("prior_sse must lie in [0, 1]")
     w_arr = np.asarray(w, dtype=np.float64)
-    hist_arr = _validate_history(history)
+    hist_2d, was_1d = _validate_histories(history)
     scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+    M = hist_2d.shape[0]
+    output_keys = ("pmo", "posterior_sse", "pmo_sse", "pmo_ssi")
 
     if method == "analytic":
         if kwargs:
@@ -348,57 +446,59 @@ def pmo_uncertain(
                 f"pmo_uncertain(method='analytic') got unexpected keyword arguments: "
                 f"{sorted(kwargs)}"
             )
-        if classify_history(hist_arr)["kind"] == "general":
-            offending_days = (np.flatnonzero(hist_arr[1:] != 0) + 1).tolist()
-            raise NotImplementedError(
-                "pmo_uncertain(method='analytic') requires a history with cases on "
-                "day 0 and at most two later days; "
-                f"got non-zero cases on day(s) {offending_days}. "
-                "Use method='simulation' or method='mcmc'."
-            )
-        result = _pmo_uncertain_analytic(R0, k, w_arr, hist_arr, prior_sse)
+        for m in range(M):
+            if classify_history(hist_2d[m])["kind"] == "general":
+                offending_days = (np.flatnonzero(hist_2d[m, 1:] != 0) + 1).tolist()
+                raise NotImplementedError(
+                    "pmo_uncertain(method='analytic') requires a history with cases on "
+                    "day 0 and at most two later days; "
+                    f"row {m} has non-zero cases on day(s) {offending_days}. "
+                    "Use method='simulation' or method='mcmc'."
+                )
+        per_row = [_pmo_uncertain_analytic(R0, k, w_arr, hist_2d[m], prior_sse) for m in range(M)]
+        result = {
+            key: np.stack([np.asarray(r[key], dtype=np.float64) for r in per_row], axis=0)
+            for key in output_keys
+        }
     elif method == "simulation":
         kwargs["prior_sse"] = prior_sse
-        result = _dispatch_multi(
-            _pmo_uncertain_sim,
+        result = _dispatch_h_dict(
+            _pmo_uncertain_sim_multi,
             R0,
             k,
             w_arr,
-            hist_arr,
+            hist_2d,
             "pmo_uncertain",
             kwargs,
-            output_keys=("pmo", "posterior_sse", "pmo_sse", "pmo_ssi"),
+            output_keys=output_keys,
+            native_multi=True,
         )
     elif method == "mcmc":
         kwargs["prior_sse"] = prior_sse
         kwargs["ssi_evidence_method"] = ssi_evidence_method
-        result = _dispatch_multi(
+        result = _dispatch_h_dict(
             _pmo_uncertain_mcmc,
             R0,
             k,
             w_arr,
-            hist_arr,
+            hist_2d,
             "pmo_uncertain_mcmc",
             kwargs,
-            output_keys=("pmo", "posterior_sse", "pmo_sse", "pmo_ssi"),
+            output_keys=output_keys,
+            native_multi=False,
         )
     else:
         raise ValueError(
             f"pmo_uncertain: method must be 'analytic', 'simulation', or 'mcmc', got {method!r}"
         )
 
-    if scalar_inputs:
-        return PmoUncertainResult(
-            pmo=float(np.asarray(result["pmo"]).reshape(())),
-            posterior_sse=float(np.asarray(result["posterior_sse"]).reshape(())),
-            pmo_sse=float(np.asarray(result["pmo_sse"]).reshape(())),
-            pmo_ssi=float(np.asarray(result["pmo_ssi"]).reshape(())),
-        )
     return PmoUncertainResult(
-        pmo=result["pmo"],
-        posterior_sse=result["posterior_sse"],
-        pmo_sse=result["pmo_sse"],
-        pmo_ssi=result["pmo_ssi"],
+        pmo=_collapse_leading(result["pmo"], was_1d=was_1d, scalar_inputs=scalar_inputs),
+        posterior_sse=_collapse_leading(
+            result["posterior_sse"], was_1d=was_1d, scalar_inputs=scalar_inputs
+        ),
+        pmo_sse=_collapse_leading(result["pmo_sse"], was_1d=was_1d, scalar_inputs=scalar_inputs),
+        pmo_ssi=_collapse_leading(result["pmo_ssi"], was_1d=was_1d, scalar_inputs=scalar_inputs),
     )
 
 

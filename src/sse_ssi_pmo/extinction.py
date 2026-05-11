@@ -294,9 +294,17 @@ def _pmo_ssi_analytic(
     F_rmi = float(F[min(r - i, F.size - 1)])
     F_rmj = float(F[min(r - j, F.size - 1)])
     return _pmo_ssi_analytic_two_later(
-        R0, k, cls["I_0"], cls["I_i"], cls["I_j"],
-        w_at(w, i), w_at(w, j), w_at(w, j - i),
-        F_r, F_rmi, F_rmj,
+        R0,
+        k,
+        cls["I_0"],
+        cls["I_i"],
+        cls["I_j"],
+        w_at(w, i),
+        w_at(w, j),
+        w_at(w, j - i),
+        F_r,
+        F_rmi,
+        F_rmj,
     )
 
 
@@ -396,7 +404,10 @@ def _pmo_uncertain_mcmc(
     pmo_ssi = _pmo_ssi_mcmc_from_trace(R0, k, w, history, datatree)
     log_L_sse = float(_log_likelihood_sse_general(R0, k, w, history))
     log_L_ssi = _log_likelihood_ssi_mcmc(
-        R0, k, w, history,
+        R0,
+        k,
+        w,
+        history,
         ssi_evidence_method=ssi_evidence_method,
         datatree=datatree,
         rng=rng,

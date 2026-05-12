@@ -251,6 +251,37 @@ def _log_likelihood_sse_general(
     return log_L
 
 
+def _log_likelihood_poisson_general(
+    R0: ArrayLike,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+) -> NDArray[np.float64]:
+    """Poisson log-likelihood ``log P(I_1, ..., I_r | I_0)`` for an arbitrary history.
+
+    Per-day factorisation ``I_t | I_{<t} ~ Poisson(R0 lambda_t)`` with
+    ``lambda_t = sum_{s<t} w_{t-s} I_s``; ``lam == 0`` and ``I_t != 0``
+    contributes ``-inf`` (same edge as the SSE form). Broadcasts over
+    ``R0``.
+    """
+    R0_b = np.asarray(R0, dtype=np.float64)
+    r = history.size - 1
+    log_L = np.zeros(R0_b.shape, dtype=np.float64)
+    L = w.size
+    for t in range(1, r + 1):
+        lam = 0.0
+        for s in range(t):
+            lag = t - s
+            if 1 <= lag <= L:
+                lam += float(w[lag - 1]) * float(history[s])
+        I_t = int(history[t])
+        if lam == 0.0:
+            if I_t != 0:
+                log_L = log_L + np.full(R0_b.shape, -np.inf)
+            continue
+        log_L = log_L + scipy.stats.poisson.logpmf(I_t, R0_b * lam)
+    return log_L
+
+
 # ---------------------------------------------------------------------------
 # SSI log-likelihood: closed forms for cases (i)-(iii)
 # ---------------------------------------------------------------------------

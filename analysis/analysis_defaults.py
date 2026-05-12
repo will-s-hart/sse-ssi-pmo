@@ -64,3 +64,8 @@ FIG5_SIM_MAX_ATTEMPTS: int = 8_000_000
 FIG6_PRIOR_SSE: float = 0.5
 FIG6_HISTORY_LENGTHS: list[int] = [2, 3]
 FIG6_N_SIM: int = 5000
+
+# --- figure 7 (PMO ensemble error across 5 models) ---
+FIG7_HISTORY_LENGTHS: list[int] = [2, 3]
+FIG7_N_SIM: int = 5000
+FIG7_K_LARGE: float = 1.0  # secondary k value alongside DEFAULT_K

@@ -1,11 +1,11 @@
-"""Forward simulation of the SSE and SSI models.
+"""Forward simulation of the SSE, SSI, and Poisson models.
 
 Public API:
 
-* :func:`simulate_sse`, :func:`simulate_ssi` — single trajectories, terminating
-  early on extinction (last ``len(w)`` time-steps all zero) or on single-step
-  incidence reaching ``threshold`` (taken as the operational definition of
-  "major outbreak").
+* :func:`simulate_sse`, :func:`simulate_ssi`, :func:`simulate_poisson` —
+  single trajectories, terminating early on extinction (last ``len(w)``
+  time-steps all zero) or on single-step incidence reaching ``threshold``
+  (taken as the operational definition of "major outbreak").
 
 Private API (used by :mod:`sse_ssi_pmo.pmo`):
 
@@ -29,6 +29,9 @@ The simulation parameterisation matches the offspring distributions used in
 * SSI step: ``I_t | foi ~ Poisson(foi)`` with ``foi = R0 * sum_s w_s Y_{t-s}``
   and ``Y_t | I_t ~ Gamma(shape=k * I_t, scale=1/k)`` (so ``Y_t = 0`` whenever
   ``I_t = 0``).
+* Poisson step: ``I_t | foi ~ Poisson(R0 * foi)`` with
+  ``foi = sum_{s=1..L} w_s * I_{t-s}`` — the ``k -> infty`` limit of either
+  the SSE or SSI model.
 """
 
 from __future__ import annotations
@@ -47,6 +50,18 @@ from tqdm.auto import tqdm
 def _check_inputs(R0: float, k: float, w: NDArray[np.float64], threshold: int, t_max: int) -> None:
     if R0 <= 0.0 or k <= 0.0:
         raise ValueError("R0 and k must be positive")
+    if w.ndim != 1 or w.size == 0:
+        raise ValueError("w must be a non-empty 1-D array")
+    if threshold < 1:
+        raise ValueError("threshold must be at least 1")
+    if t_max < 1:
+        raise ValueError("t_max must be at least 1")
+
+
+def _check_inputs_poisson(R0: float, w: NDArray[np.float64], threshold: int, t_max: int) -> None:
+    """Variant of :func:`_check_inputs` without the ``k > 0`` check (no ``k``)."""
+    if R0 <= 0.0:
+        raise ValueError("R0 must be positive")
     if w.ndim != 1 or w.size == 0:
         raise ValueError("w must be a non-empty 1-D array")
     if threshold < 1:
@@ -130,6 +145,52 @@ def simulate_ssi(
     )
     end = _resolution_index(incidence[0], len(w_arr), threshold)
     return incidence[0, : end + 1].copy()
+
+
+def simulate_poisson(
+    R0: float,
+    w: ArrayLike,
+    *,
+    init_incidence: ArrayLike = (1,),
+    threshold: int,
+    t_max: int,
+    rng: np.random.Generator | None = None,
+) -> NDArray[np.int64]:
+    """Simulate one Poisson-offspring trajectory; return the incidence vector.
+
+    Step: ``I_t ~ Poisson(R0 * sum_{s=1..L} w_s * I_{t-s})`` — the
+    ``k -> infty`` limit of :func:`simulate_sse` / :func:`simulate_ssi`.
+    The trajectory ends as soon as either a single-step incidence reaches
+    ``threshold`` (major outbreak) or the most recent ``len(w)`` entries
+    are all zero (extinction); otherwise it runs to length ``t_max``.
+    """
+    rng = np.random.default_rng() if rng is None else rng
+    w_arr = np.asarray(w, dtype=np.float64)
+    init = np.asarray(init_incidence, dtype=np.int64)
+    _check_inputs_poisson(R0, w_arr, threshold, t_max)
+    if init.ndim != 1 or init.size == 0:
+        raise ValueError("init_incidence must be a non-empty 1-D array of integers")
+    history_len = init.size
+    if history_len > t_max:
+        raise ValueError("init_incidence longer than t_max")
+
+    L_w = w_arr.size
+    incidence = np.zeros(t_max, dtype=np.int64)
+    incidence[:history_len] = init
+
+    for t in range(history_len, t_max):
+        L_use = min(t, L_w)
+        foi = float(incidence[t - L_use : t] @ w_arr[:L_use][::-1])
+        if foi > 0.0:
+            incidence[t] = int(rng.poisson(R0 * foi))
+        if incidence[t] >= threshold:
+            break
+        ext_start = max(0, t + 1 - L_w)
+        if incidence[ext_start : t + 1].sum() == 0:
+            break
+
+    end = _resolution_index(incidence, L_w, threshold)
+    return incidence[: end + 1].copy()
 
 
 def _resolution_index(traj: NDArray[np.int64], L: int, threshold: int) -> int:
@@ -730,6 +791,7 @@ def _pmo_uncertain_sim(
 
 
 __all__ = [
+    "simulate_poisson",
     "simulate_sse",
     "simulate_ssi",
 ]

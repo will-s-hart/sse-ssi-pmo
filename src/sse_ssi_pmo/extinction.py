@@ -44,6 +44,7 @@ from sse_ssi_pmo._history import classify_history, w_at
 from sse_ssi_pmo.likelihood import (
     SsiEvidenceMethod,
     _log_c_m_two_later_days,
+    _log_likelihood_poisson_general,
     _log_likelihood_sse_general,
     _log_likelihood_ssi_analytic,
     _log_likelihood_ssi_mcmc,
@@ -69,6 +70,22 @@ def _nb_extinction_prob(mean: float, disp: float) -> float:
 
     # f(0) = G(0) > 0; f(_Q_UPPER) < 0 because mean > 1 implies G'(1) > 1, so
     # G(q) < q just below 1. Thus brentq finds the unique root in (0, 1).
+    return float(scipy.optimize.brentq(f, 0.0, _Q_UPPER))
+
+
+def _poisson_extinction_prob(mean: float) -> float:
+    """Extinction probability for a single ``Poisson(mean)`` offspring distribution.
+
+    The ``k -> infty`` limit of :func:`_nb_extinction_prob`: pgf
+    ``G(s) = exp(mean (s - 1))``. ``mean <= 1`` ⇒ ``q = 1``; otherwise
+    ``brentq`` on ``exp(mean (q - 1)) - q`` in ``(0, _Q_UPPER)``.
+    """
+    if mean <= 1.0:
+        return 1.0
+
+    def f(q: float) -> float:
+        return float(np.exp(mean * (q - 1.0))) - q
+
     return float(scipy.optimize.brentq(f, 0.0, _Q_UPPER))
 
 
@@ -115,6 +132,24 @@ def _pmo_sse_analytic(
     """
     Lambda = _lambda_from_history(w, history)
     q, _, _ = _q_array(R0, k)
+    return 1.0 - q**Lambda
+
+
+def _pmo_poisson_analytic(
+    R0: ArrayLike,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+) -> NDArray[np.float64]:
+    """Poisson PMO ``1 - q ** Lambda`` for the general observed history.
+
+    Same functional form as the SSE PMO but with ``q`` solved from the
+    Poisson pgf (the ``k -> infty`` limit). Broadcasts over ``R0``.
+    """
+    Lambda = _lambda_from_history(w, history)
+    R0_arr = np.asarray(R0, dtype=np.float64)
+    q = np.empty(R0_arr.shape, dtype=np.float64)
+    for idx in np.ndindex(R0_arr.shape):
+        q[idx] = _poisson_extinction_prob(float(R0_arr[idx]))
     return 1.0 - q**Lambda
 
 
@@ -422,3 +457,149 @@ def _pmo_uncertain_mcmc(
         prior_sse,
     )
     return {key: float(np.asarray(val).reshape(())) for key, val in result.items()}
+
+
+# ---------------------------------------------------------------------------
+# Ensemble (arbitrary number of models)
+# ---------------------------------------------------------------------------
+
+
+def _bayes_model_average_n(
+    pmo_arr: NDArray[np.float64],
+    log_L_arr: NDArray[np.float64],
+    priors: NDArray[np.float64],
+) -> dict[str, NDArray[np.float64]]:
+    """N-model Bayesian model average — generalises :func:`_bayes_model_average`.
+
+    Inputs are length-``N`` 1-D arrays (one entry per model spec).
+    Returns dict with: scalar ``pmo`` (model-averaged), length-``N`` arrays
+    ``posteriors`` and ``pmo_per_model``.
+    """
+    with np.errstate(divide="ignore"):
+        log_prior = np.log(priors)
+    a = log_prior + log_L_arr
+    log_norm = scipy.special.logsumexp(a)
+    posteriors = np.exp(a - log_norm)
+    pmo = float((posteriors * pmo_arr).sum())
+    return {
+        "pmo": np.asarray(pmo, dtype=np.float64),
+        "posteriors": posteriors.astype(np.float64),
+        "pmo_per_model": pmo_arr.astype(np.float64),
+    }
+
+
+def _pmo_per_spec_analytic(
+    spec: dict,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+) -> tuple[float, float]:
+    """Return ``(pmo, log_L)`` for one model spec, fully closed-form.
+
+    ``"ssi"`` raises :class:`ValueError` for histories with three or more
+    later non-zero days (consistent with the analytic SSI backends).
+    """
+    kind = spec["model"]
+    if kind == "sse":
+        pmo = float(np.asarray(_pmo_sse_analytic(spec["R0"], spec["k"], w, history)).reshape(()))
+        log_L = float(
+            np.asarray(_log_likelihood_sse_general(spec["R0"], spec["k"], w, history)).reshape(())
+        )
+        return pmo, log_L
+    if kind == "ssi":
+        pmo = float(np.asarray(_pmo_ssi_analytic(spec["R0"], spec["k"], w, history)).reshape(()))
+        log_L = float(
+            np.asarray(_log_likelihood_ssi_analytic(spec["R0"], spec["k"], w, history)).reshape(())
+        )
+        return pmo, log_L
+    if kind == "poisson":
+        pmo = float(np.asarray(_pmo_poisson_analytic(spec["R0"], w, history)).reshape(()))
+        log_L = float(
+            np.asarray(_log_likelihood_poisson_general(spec["R0"], w, history)).reshape(())
+        )
+        return pmo, log_L
+    raise ValueError(f"unknown model kind {kind!r}; expected 'sse', 'ssi', or 'poisson'")
+
+
+def _pmo_ensemble_analytic(
+    models: list[dict],
+    priors: NDArray[np.float64],
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+) -> dict[str, NDArray[np.float64]]:
+    """Ensemble PMO for one history, all per-model PMOs and likelihoods closed-form.
+
+    Returns a dict with keys ``pmo`` (scalar 0-d array), ``posteriors``
+    (length-``N``), ``pmo_per_model`` (length-``N``). SSI specs require
+    a history with cases on day 0 and at most two later days; otherwise
+    use :func:`_pmo_ensemble_mcmc`.
+    """
+    N = len(models)
+    pmo_arr = np.empty(N, dtype=np.float64)
+    log_L_arr = np.empty(N, dtype=np.float64)
+    for i, spec in enumerate(models):
+        pmo_arr[i], log_L_arr[i] = _pmo_per_spec_analytic(spec, w, history)
+    return _bayes_model_average_n(pmo_arr, log_L_arr, priors)
+
+
+def _pmo_ensemble_mcmc(
+    models: list[dict],
+    priors: NDArray[np.float64],
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+    *,
+    ssi_evidence_method: SsiEvidenceMethod = "bridge",
+    rng: np.random.Generator | None = None,
+    n_evidence_samples: int | None = None,
+    show_progress: bool = False,
+    **mcmc_kwargs,
+) -> dict[str, NDArray[np.float64]]:
+    """Ensemble PMO for one history, MCMC for SSI specs (any history).
+
+    SSE and Poisson specs stay closed-form. Each SSI spec runs ``fit_ssi``
+    once and reuses the trace for both the PMO and the marginal log-
+    likelihood, mirroring :func:`_pmo_uncertain_mcmc`.
+    """
+    from sse_ssi_pmo.inference import fit_ssi
+
+    thin = mcmc_kwargs.pop("thin", 1)
+    mcmc_kwargs.setdefault("progressbar", show_progress)
+
+    N = len(models)
+    pmo_arr = np.empty(N, dtype=np.float64)
+    log_L_arr = np.empty(N, dtype=np.float64)
+    for i, spec in enumerate(models):
+        kind = spec["model"]
+        if kind == "sse":
+            pmo_arr[i] = float(
+                np.asarray(_pmo_sse_analytic(spec["R0"], spec["k"], w, history)).reshape(())
+            )
+            log_L_arr[i] = float(
+                np.asarray(_log_likelihood_sse_general(spec["R0"], spec["k"], w, history)).reshape(
+                    ()
+                )
+            )
+        elif kind == "ssi":
+            R0_i = float(spec["R0"])
+            k_i = float(spec["k"])
+            datatree = fit_ssi(history, w, R0=R0_i, k=k_i, thin=thin, **mcmc_kwargs)
+            pmo_arr[i] = _pmo_ssi_mcmc_from_trace(R0_i, k_i, w, history, datatree)
+            log_L_arr[i] = _log_likelihood_ssi_mcmc(
+                R0_i,
+                k_i,
+                w,
+                history,
+                ssi_evidence_method=ssi_evidence_method,
+                datatree=datatree,
+                rng=rng,
+                n_samples=n_evidence_samples,
+            )
+        elif kind == "poisson":
+            pmo_arr[i] = float(
+                np.asarray(_pmo_poisson_analytic(spec["R0"], w, history)).reshape(())
+            )
+            log_L_arr[i] = float(
+                np.asarray(_log_likelihood_poisson_general(spec["R0"], w, history)).reshape(())
+            )
+        else:
+            raise ValueError(f"unknown model kind {kind!r}; expected 'sse', 'ssi', or 'poisson'")
+    return _bayes_model_average_n(pmo_arr, log_L_arr, priors)

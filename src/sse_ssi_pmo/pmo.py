@@ -1,9 +1,9 @@
 """Probability of major outbreak (PMO) — public dispatcher API.
 
-Three top-level functions, each taking the observed incidence
+Five top-level functions, each taking the observed incidence
 ``history = (I_0, I_1, ..., I_r)`` together with the serial-interval weights
 ``w`` and dispatching to either an analytic closed-form or a Monte-Carlo
-simulation:
+simulation / MCMC backend:
 
 * :func:`pmo_sse` — SSE model; ``method ∈ {"analytic", "simulation"}``.
 * :func:`pmo_ssi` — SSI model; ``method ∈ {"analytic", "simulation", "mcmc"}``.
@@ -11,11 +11,19 @@ simulation:
   by zeros). ``"mcmc"`` samples the latent infectivities via HMC and averages
   the conditional extinction probability over draws — see ``notes/notes.tex``
   for the derivation.
+* :func:`pmo_poisson` — Poisson offspring model (the ``k -> infty`` limit
+  of either SSE or SSI); ``method = "analytic"`` only, supports any
+  history.
 * :func:`pmo_uncertain` — Bayesian model average across SSE and SSI given a
   prior ``prior_sse`` on the SSE model. ``method ∈ {"analytic",
   "simulation"}``; ``"analytic"`` only supports the day-0-only history.
   Returns a :class:`PmoUncertainResult` NamedTuple with the model-averaged
   PMO, the posterior probability of SSE, and the per-model PMOs.
+* :func:`pmo_ensemble` — Bayesian model average across an arbitrary list
+  of model specs (each a dict identifying SSE, SSI, or Poisson with its
+  own scalar parameters) and prior probabilities; ``method ∈ {"analytic",
+  "mcmc"}``. Returns a :class:`PmoEnsembleResult` NamedTuple with the
+  model-averaged PMO, per-model posteriors, and per-model PMOs.
 
 All functions broadcast over ``R0`` and ``k`` (scalar or array). Scalar
 inputs return a Python ``float`` (or float-valued NamedTuple for
@@ -48,6 +56,9 @@ from tqdm.auto import tqdm
 
 from sse_ssi_pmo._history import classify_history
 from sse_ssi_pmo.extinction import (
+    _pmo_ensemble_analytic,
+    _pmo_ensemble_mcmc,
+    _pmo_poisson_analytic,
     _pmo_sse_analytic,
     _pmo_ssi_analytic,
     _pmo_ssi_mcmc,
@@ -77,6 +88,70 @@ class PmoUncertainResult(NamedTuple):
     posterior_sse: float | NDArray[np.float64]
     pmo_sse: float | NDArray[np.float64]
     pmo_ssi: float | NDArray[np.float64]
+
+
+class PmoEnsembleResult(NamedTuple):
+    """Return type of :func:`pmo_ensemble`.
+
+    ``pmo`` is the model-averaged probability of a major outbreak;
+    ``posteriors`` is the per-model posterior probability vector given the
+    observed history; ``pmo_per_model`` is the per-model PMO vector. For
+    a 1-D ``history``, ``pmo`` is a Python ``float`` and ``posteriors`` /
+    ``pmo_per_model`` are length-``N`` arrays. For a 2-D ``(M, L)``
+    ``history``, ``pmo`` is shape ``(M,)`` and the others are ``(M, N)``.
+    """
+
+    pmo: float | NDArray[np.float64]
+    posteriors: NDArray[np.float64]
+    pmo_per_model: NDArray[np.float64]
+
+
+_ENSEMBLE_REQUIRED_KEYS: dict[str, frozenset[str]] = {
+    "sse": frozenset({"model", "R0", "k"}),
+    "ssi": frozenset({"model", "R0", "k"}),
+    "poisson": frozenset({"model", "R0"}),
+}
+
+
+def _validate_model_specs(models: list[dict]) -> None:
+    """Validate each ``models[i]`` is a well-formed model spec dict.
+
+    See :func:`pmo_ensemble` for the accepted shapes. Raises ``ValueError``
+    on any irregularity.
+    """
+    if not isinstance(models, list) or len(models) == 0:
+        raise ValueError("models must be a non-empty list of dicts")
+    for i, spec in enumerate(models):
+        if not isinstance(spec, dict):
+            raise ValueError(f"models[{i}] must be a dict; got {type(spec).__name__}")
+        if "model" not in spec:
+            raise ValueError(f"models[{i}] missing required key 'model'")
+        kind = spec["model"]
+        if kind not in _ENSEMBLE_REQUIRED_KEYS:
+            raise ValueError(
+                f"models[{i}]['model'] = {kind!r}; expected one of "
+                f"{sorted(_ENSEMBLE_REQUIRED_KEYS)}"
+            )
+        required = _ENSEMBLE_REQUIRED_KEYS[kind]
+        missing = required - set(spec)
+        extra = set(spec) - required
+        if missing:
+            raise ValueError(f"models[{i}] (model={kind!r}) missing keys: {sorted(missing)}")
+        if extra:
+            raise ValueError(f"models[{i}] (model={kind!r}) has unexpected keys: {sorted(extra)}")
+
+
+def _validate_priors(priors: ArrayLike, n_models: int) -> NDArray[np.float64]:
+    """Validate ``priors`` is a length-``n_models`` non-negative simplex point."""
+    arr = np.asarray(priors, dtype=np.float64)
+    if arr.ndim != 1 or arr.size != n_models:
+        raise ValueError(f"priors must be a 1-D array of length {n_models} (matching len(models))")
+    if (arr < 0).any():
+        raise ValueError("priors must be non-negative")
+    s = float(arr.sum())
+    if not np.isclose(s, 1.0, atol=1e-9):
+        raise ValueError(f"priors must sum to 1 (got {s})")
+    return arr
 
 
 def _validate_histories(history: ArrayLike) -> tuple[NDArray[np.int64], bool]:
@@ -502,4 +577,175 @@ def pmo_uncertain(
     )
 
 
-__all__ = ["PmoUncertainResult", "pmo_sse", "pmo_ssi", "pmo_uncertain"]
+def pmo_poisson(
+    *,
+    R0: ArrayLike,
+    w: ArrayLike,
+    history: ArrayLike,
+    method: Literal["analytic"] = "analytic",
+) -> float | NDArray[np.float64]:
+    """Probability of major outbreak under the Poisson offspring model.
+
+    The Poisson offspring model is the ``k -> infty`` limit of either SSE
+    or SSI; offspring at each lag follow ``Poisson(R0 w_s)`` independently,
+    and the closed-form PMO ``1 - q ** Lambda`` matches the SSE form but
+    with ``q`` solved from the Poisson pgf.
+
+    Parameters
+    ----------
+    R0
+        Reproduction number; scalar or array (broadcast over ``R0``).
+    w
+        Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``.
+    history
+        Observed incidence as a 1-D array or a 2-D ``(M, L)`` array of
+        histories (see :func:`pmo_sse` for the convention).
+    method
+        Only ``"analytic"`` is supported. ``"simulation"`` and ``"mcmc"``
+        raise :class:`NotImplementedError` — for forward Monte-Carlo use
+        :func:`~sse_ssi_pmo.simulate_poisson` directly.
+    """
+    if method != "analytic":
+        raise NotImplementedError(
+            "pmo_poisson currently supports method='analytic' only; "
+            "for forward simulation use sse_ssi_pmo.simulate_poisson directly."
+        )
+    w_arr = np.asarray(w, dtype=np.float64)
+    hist_2d, was_1d = _validate_histories(history)
+    scalar_inputs = np.ndim(R0) == 0
+    M = hist_2d.shape[0]
+    per_row = [_pmo_poisson_analytic(R0, w_arr, hist_2d[m]) for m in range(M)]
+    out = np.stack([np.asarray(r, dtype=np.float64) for r in per_row], axis=0)
+    return _collapse_leading(out, was_1d=was_1d, scalar_inputs=scalar_inputs)
+
+
+def pmo_ensemble(
+    *,
+    models: list[dict],
+    priors: ArrayLike,
+    w: ArrayLike,
+    history: ArrayLike,
+    method: Literal["analytic", "mcmc"],
+    ssi_evidence_method: SsiEvidenceMethod = "bridge",
+    **kwargs,
+) -> PmoEnsembleResult:
+    """Bayesian model-averaged probability of major outbreak across an N-model ensemble.
+
+    Generalises :func:`pmo_uncertain` to an arbitrary list of model specs
+    and prior probabilities. Each ``models[i]`` is a dict identifying one
+    candidate offspring model and carrying its own scalar parameters
+    (``R0``, plus ``k`` for SSE/SSI):
+
+    - ``{"model": "sse", "R0": float, "k": float}``
+    - ``{"model": "ssi", "R0": float, "k": float}``
+    - ``{"model": "poisson", "R0": float}``
+
+    ``priors[i]`` is the prior probability assigned to ``models[i]``;
+    ``priors`` must be a 1-D non-negative array of length ``len(models)``
+    summing to 1.
+
+    Parameters
+    ----------
+    method
+        ``"analytic"`` for closed-form per-model PMOs and likelihoods.
+        SSI specs require a history with cases on day 0 and at most two
+        later days; otherwise raises :class:`NotImplementedError`.
+        ``"mcmc"`` runs ``fit_ssi`` once per SSI spec per history and
+        reuses the trace for both the PMO and the marginal log-likelihood
+        (SSE and Poisson remain closed-form). ``"simulation"`` raises
+        :class:`NotImplementedError`.
+    ssi_evidence_method
+        Estimator used for SSI marginal log-likelihoods under
+        ``method='mcmc'``: ``"bridge"`` (default), ``"importance_sampling"``,
+        or ``"naive"``. Ignored when ``method='analytic'``.
+    **kwargs
+        Forwarded to the MCMC backends as needed (``rng``,
+        ``n_evidence_samples``, ``pm.sample`` kwargs such as ``draws``,
+        ``tune``, ``chains``, ``thin``, ``progressbar``, ``target_accept``,
+        …). ``show_progress`` controls the per-row tqdm bar.
+    """
+    _validate_model_specs(models)
+    priors_arr = _validate_priors(priors, len(models))
+
+    w_arr = np.asarray(w, dtype=np.float64)
+    hist_2d, was_1d = _validate_histories(history)
+    M = hist_2d.shape[0]
+    N = len(models)
+
+    pmo_out = np.empty(M, dtype=np.float64)
+    posteriors_out = np.empty((M, N), dtype=np.float64)
+    pmo_per_model_out = np.empty((M, N), dtype=np.float64)
+
+    if method == "analytic":
+        if kwargs:
+            raise TypeError(
+                f"pmo_ensemble(method='analytic') got unexpected keyword arguments: "
+                f"{sorted(kwargs)}"
+            )
+        has_ssi = any(spec["model"] == "ssi" for spec in models)
+        if has_ssi:
+            for m in range(M):
+                if classify_history(hist_2d[m])["kind"] == "general":
+                    offending_days = (np.flatnonzero(hist_2d[m, 1:] != 0) + 1).tolist()
+                    raise NotImplementedError(
+                        "pmo_ensemble(method='analytic') with an SSI spec requires "
+                        "a history with cases on day 0 and at most two later days; "
+                        f"row {m} has non-zero cases on day(s) {offending_days}. "
+                        "Use method='mcmc'."
+                    )
+        for m in range(M):
+            result = _pmo_ensemble_analytic(models, priors_arr, w_arr, hist_2d[m])
+            pmo_out[m] = float(np.asarray(result["pmo"]).reshape(()))
+            posteriors_out[m] = result["posteriors"]
+            pmo_per_model_out[m] = result["pmo_per_model"]
+    elif method == "mcmc":
+        show_progress = kwargs.pop("show_progress", False)
+        if show_progress and M > 1:
+            row_iter: range | tqdm = tqdm(range(M), desc="pmo_ensemble", leave=False)
+            inner_progress = False
+        else:
+            row_iter = range(M)
+            inner_progress = show_progress
+        for m in row_iter:
+            result = _pmo_ensemble_mcmc(
+                models,
+                priors_arr,
+                w_arr,
+                hist_2d[m],
+                ssi_evidence_method=ssi_evidence_method,
+                show_progress=inner_progress,
+                **kwargs,
+            )
+            pmo_out[m] = float(np.asarray(result["pmo"]).reshape(()))
+            posteriors_out[m] = result["posteriors"]
+            pmo_per_model_out[m] = result["pmo_per_model"]
+    elif method == "simulation":
+        raise NotImplementedError(
+            "pmo_ensemble(method='simulation') is not yet supported; "
+            "use method='analytic' or 'mcmc'."
+        )
+    else:
+        raise ValueError(f"pmo_ensemble: method must be 'analytic' or 'mcmc', got {method!r}")
+
+    if was_1d:
+        return PmoEnsembleResult(
+            pmo=float(pmo_out[0]),
+            posteriors=posteriors_out[0],
+            pmo_per_model=pmo_per_model_out[0],
+        )
+    return PmoEnsembleResult(
+        pmo=pmo_out,
+        posteriors=posteriors_out,
+        pmo_per_model=pmo_per_model_out,
+    )
+
+
+__all__ = [
+    "PmoEnsembleResult",
+    "PmoUncertainResult",
+    "pmo_ensemble",
+    "pmo_poisson",
+    "pmo_sse",
+    "pmo_ssi",
+    "pmo_uncertain",
+]

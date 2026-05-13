@@ -65,7 +65,10 @@ FIG6_PRIOR_SSE: float = 0.5
 FIG6_HISTORY_LENGTHS: list[int] = [2, 3]
 FIG6_N_SIM: int = 5000
 
-# fig7 is reserved for a separate figure not implemented in this branch.
+# --- figure 7 (PMO ensemble error across 5 models) ---
+FIG7_HISTORY_LENGTHS: list[int] = [2, 3]
+FIG7_N_SIM: int = 5000
+FIG7_K_LARGE: float = 1.0  # secondary k value alongside DEFAULT_K
 
 # --- figure 8 (PMO vs r with uncertain R0) ---
 FIG8_R_MAX: int = FIG1_R_MAX

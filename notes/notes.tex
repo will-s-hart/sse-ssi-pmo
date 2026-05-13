@@ -8,11 +8,11 @@
 \begin{document}
 
 % ---------------------------------------------------------------------------
-\section{Two stochastic epidemic models}
+\section{Three stochastic epidemic models}
 \label{sec:models}
 % ---------------------------------------------------------------------------
 
-We consider two discrete-time, branching-process models for the spread of
+We consider three discrete-time, branching-process models for the spread of
 an infectious disease.  Time is measured in days.  Let $I_t \geq 0$ denote
 the number of new infections (incidence) on day $t$, and let $R_t > 0$ be
 the effective reproduction number on day $t$.
@@ -27,10 +27,11 @@ for the cumulative serial interval distribution at lag $r$, so
 $1 - F_r = \sum_{s=r+1}^\infty w_s$ is the probability that transmission
 occurs after day $r$.
 
-The \emph{dispersion parameter} $k > 0$ controls individual-level variation
-in infectiousness.  Small $k$ corresponds to high heterogeneity
-(superspreading); as $k \to \infty$ the negative-binomial offspring
-distribution converges to a Poisson.
+The first two models share a \emph{dispersion parameter} $k > 0$
+controlling individual-level variation in infectiousness.  Small $k$
+corresponds to high heterogeneity (superspreading); as $k \to \infty$
+both models collapse onto a common Poisson offspring distribution with no
+dispersion parameter — our third model.
 
 \begin{remark}
   Throughout, $\mathrm{NB}(\text{mean} = \mu, \text{disp} = k)$ denotes the
@@ -51,7 +52,7 @@ distribution converges to a Poisson.
 \end{remark}
 
 % ---------------------------------------------------------------------------
-\section{SSE model (Superspreading Events)}
+\subsection{SSE model (Superspreading Events)}
 \label{sec:sse}
 % ---------------------------------------------------------------------------
 
@@ -72,7 +73,7 @@ variance by the factor $1 + R_t \lambda_t / k$, capturing superspreading at
 the population level.
 
 % ---------------------------------------------------------------------------
-\section{SSI model (Superspreading Individuals)}
+\subsection{SSI model (Superspreading Individuals)}
 \label{sec:ssi}
 % ---------------------------------------------------------------------------
 
@@ -102,6 +103,36 @@ process driven by past infectivity,
 \end{remark}
 
 % ---------------------------------------------------------------------------
+\subsection{Poisson offspring model}
+\label{sec:poisson}
+% ---------------------------------------------------------------------------
+
+In the \emph{Poisson} offspring model the force of infection on day $t$ is
+the same weighted sum as in the SSE model,
+\begin{equation}
+  \lambda_t = \sum_{s=1}^{\infty} w_s\, I_{t-s},
+\end{equation}
+and new infections are Poisson distributed:
+\begin{equation}
+  I_t \mid \lambda_t \;\sim\;
+  \mathrm{Poisson}\!\left(R_t \lambda_t\right).
+\end{equation}
+The conditional mean and variance of $I_t$ are both $R_t \lambda_t$:
+the Poisson is the limit of the SSE-style overdispersion vanishing
+($1 + R_t \lambda_t / k \to 1$ as $k \to \infty$).
+
+\begin{remark}
+  The Poisson model is the common $k \to \infty$ limit of both the SSE
+  and the SSI models.  In the SSE step the negative-binomial offspring
+  distribution $\mathrm{NB}(R_t \lambda_t, k\lambda_t)$ collapses to
+  $\mathrm{Poisson}(R_t \lambda_t)$ as $k \to \infty$; in the SSI step
+  the Gamma noise on the individual infectivities degenerates to
+  $Y_t = I_t$ a.s., again leaving $\mathrm{Poisson}(R_t \lambda_t)$ for
+  the increment.  There is no dispersion parameter; the only model
+  parameter is $R_t$.
+\end{remark}
+
+% ---------------------------------------------------------------------------
 \section{Extinction probability}
 \label{sec:extinction}
 % ---------------------------------------------------------------------------
@@ -111,16 +142,22 @@ study the probability that the epidemic goes extinct, starting from a single
 infectious case on day~0.
 
 By branching-process theory, the extinction probability $q$ is the smallest
-non-negative fixed point of the pgf of the offspring distribution.  For both
-models the offspring distribution is
+non-negative fixed point of the pgf of the offspring distribution.  For the
+SSE and SSI models the offspring distribution is
 $\mathrm{NB}(\text{mean} = R_0, \text{disp} = k)$, whose pgf is
-$G(s) = (k/(k + R_0(1-s)))^k$.  Setting $q = G(q)$ gives
-\begin{equation}
+$G(s) = (k/(k + R_0(1-s)))^k$; setting $q = G(q)$ gives
+\begin{equation}\label{eq:q_nb}
   q = \left(1 + \frac{R_0}{k}(1 - q)\right)^{-k}.
 \end{equation}
-If $R_0 \leq 1$ the unique solution is $q = 1$ (extinction is certain); if
-$R_0 > 1$ there is a unique solution $q \in (0,1)$, so the probability of a
-major outbreak is $1 - q > 0$.
+For the Poisson model the offspring distribution is
+$\mathrm{Poisson}(R_0)$, whose pgf is $G(s) = e^{R_0(s - 1)}$; setting
+$q = G(q)$ gives
+\begin{equation}\label{eq:q_poisson}
+  q = e^{R_0(q - 1)}.
+\end{equation}
+In all three models, if $R_0 \leq 1$ the unique solution is $q = 1$
+(extinction is certain); if $R_0 > 1$ there is a unique solution
+$q \in (0,1)$, so the probability of a major outbreak is $1 - q > 0$.
 
 % ---------------------------------------------------------------------------
 \subsection{Extinction probability after observing incidence on days 0 to \(r\)}
@@ -132,18 +169,19 @@ days, with $I_0 \geq 1$.  We compute the updated extinction probability
 $q_r$ for the residual epidemic — the probability that the chain triggered
 by the observed cases eventually dies out.
 
-A standard branching-process argument applies in both models: each remaining
-offspring of the observed cases, once born, initiates an independent fresh
-epidemic governed by the original NB($R_0$, $k$) offspring distribution and
-goes extinct with the standard probability $q$ (the smallest fixed point of
-$G$).  The conditioning event constrains only the offspring of the observed
-cases on days $0, \ldots, r$; it does not propagate to later generations.
-Therefore
+A standard branching-process argument applies in all three models: each
+remaining offspring of the observed cases, once born, initiates an
+independent fresh epidemic governed by the original offspring
+distribution (NB($R_0$, $k$) for SSE/SSI, $\mathrm{Poisson}(R_0)$ for
+Poisson) and goes extinct with the standard probability $q$ (the
+smallest fixed point of $G$).  The conditioning event constrains only
+the offspring of the observed cases on days $0, \ldots, r$; it does not
+propagate to later generations.  Therefore
 \[
   q_r = G_r(q),
 \]
-where $G_r$ is the pgf of the (conditional) total remaining offspring of the
-observed cases.  The two models differ in the form of $G_r$.
+where $G_r$ is the pgf of the (conditional) total remaining offspring of
+the observed cases.  The three models differ in the form of $G_r$.
 
 % ---- SSE ------------------------------------------------------------------
 \subsubsection{SSE model}
@@ -178,7 +216,7 @@ since none of its offspring have had a chance to appear yet.
 
 The pgf is
 $G_r(s) = \bigl(1 + (R_0/k)(1-s)\bigr)^{-k\Lambda} = G(s)^{\Lambda}$, so
-\begin{equation}
+\begin{equation}\label{eq:qr_sse}
   q_r \;=\; G_r(q) \;=\; q^{\Lambda}
   \;=\; q^{\,\sum_{s=0}^{r} I_s\,(1 - F_{r-s})}.
 \end{equation}
@@ -261,33 +299,76 @@ where $\Lambda^{(m)} = \sum_{s=0}^r Y_s^{(m)}(1-F_{r-s})$.
   which matches the closed-form result \eqref{eq:qr_case_i}.
 \end{remark}
 
+% ---- Poisson --------------------------------------------------------------
+\subsubsection{Poisson model}
+\label{sec:qr_poisson}
+
+The argument of \S~\ref{sec:qr_sse} carries over verbatim with NB
+replaced by Poisson.  Each of the $I_s$ individuals infected on day $s$
+generates a $\mathrm{Poisson}(R_0 w_\ell)$ number of offspring at lag
+$\ell$, independently across individuals, donor days, and lags.  By
+Poisson closure under summation the total remaining offspring of the
+observed cases is
+\begin{equation}
+  \sum_{s=0}^{r} \sum_{i=1}^{I_s} \sum_{\ell = r-s+1}^{\infty}
+  \mathrm{Poisson}(R_0 w_\ell)
+  \;=\;
+  \mathrm{Poisson}\!\left(R_0\,\Lambda\right),
+\end{equation}
+with the same pooled effective weight
+$\Lambda = \sum_{s=0}^{r} I_s\,(1 - F_{r-s})$ as in the SSE model.  The
+pgf is $G_r(s) = e^{R_0\Lambda(s-1)} = G(s)^{\Lambda}$, so
+\begin{equation}\label{eq:qr_poisson}
+  q_r \;=\; G_r(q) \;=\; q^{\Lambda},
+\end{equation}
+identical in functional form to \eqref{eq:qr_sse} but with $q$ the
+Poisson extinction root \eqref{eq:q_poisson}.  In particular, both
+\eqref{eq:qr_sse} and \eqref{eq:qr_poisson} are closed-form for any
+observed history.
+
 % ---------------------------------------------------------------------------
 \section{Probability of major outbreak under model uncertainty}
 \label{sec:pmo_uncertain}
 % ---------------------------------------------------------------------------
 
-So far we have computed the probability of a major outbreak conditional on a
-chosen model (SSE or SSI).  In practice the underlying mechanism generating
-overdispersion is unknown, and we may wish to combine the two via Bayesian
-model averaging.  Let $\pi_\mathrm{SSE}, \pi_\mathrm{SSI} \in [0,1]$ with
-$\pi_\mathrm{SSE} + \pi_\mathrm{SSI} = 1$ be prior probabilities on the two
-models.  Given the observed history $(I_0, \ldots, I_r)$, Bayes' theorem
-yields posterior model probabilities
-\begin{equation}
+So far we have computed the probability of a major outbreak conditional on
+a chosen model (SSE, SSI, or Poisson).  In practice the underlying
+mechanism generating overdispersion is unknown, and we may wish to combine
+the candidate models via Bayesian model averaging.  Let $\mathcal{M}$
+denote a finite set of candidate models with prior probabilities
+$\{\pi_M\}_{M \in \mathcal{M}}$ satisfying
+$\sum_{M \in \mathcal{M}} \pi_M = 1$.  Two natural choices are the
+two-model set $\mathcal{M} = \{\mathrm{SSE}, \mathrm{SSI}\}$ (a single
+$k$, varying only the noise mechanism) and a wider ensemble including
+several SSE and SSI specifications with different $k$ values together
+with the Poisson limit.  Given the observed history $(I_0, \ldots, I_r)$,
+Bayes' theorem yields posterior model probabilities
+\begin{equation}\label{eq:pi_post_general}
   \pi_M^\star
-  \;=\; \frac{\pi_M\, L_M}{\pi_\mathrm{SSE}\, L_\mathrm{SSE}
-  + \pi_\mathrm{SSI}\, L_\mathrm{SSI}},
+  \;=\; \frac{\pi_M\, L_M}
+  {\sum_{M' \in \mathcal{M}} \pi_{M'}\, L_{M'}},
   \qquad
   L_M \;=\; \mathbb{P}_M(I_1, \ldots, I_r \mid I_0),
-  \qquad M \in \{\mathrm{SSE}, \mathrm{SSI}\}.
 \end{equation}
-The model-averaged probability of a major outbreak is then
-\begin{equation}
+and the model-averaged probability of a major outbreak is the posterior
+expectation of the per-model PMOs,
+\begin{equation}\label{eq:pmo_avg_general}
   \mathrm{PMO}_\mathrm{avg}
-  \;=\; \pi_\mathrm{SSE}^\star \cdot \mathrm{PMO}_\mathrm{SSE}
-  + \pi_\mathrm{SSI}^\star \cdot \mathrm{PMO}_\mathrm{SSI},
+  \;=\; \sum_{M \in \mathcal{M}} \pi_M^\star\,\mathrm{PMO}_M,
 \end{equation}
-where $\mathrm{PMO}_M = 1 - q_r^M$ as derived above.
+where $\mathrm{PMO}_M = 1 - q_r^M$ as derived above.  Specialising to the
+two-model case $\mathcal{M} = \{\mathrm{SSE}, \mathrm{SSI}\}$,
+\eqref{eq:pi_post_general} and \eqref{eq:pmo_avg_general} become the
+familiar pair
+\begin{equation}\label{eq:pmo_avg_two_model}
+  \pi_\mathrm{SSE}^\star
+  \;=\; \frac{\pi_\mathrm{SSE}\, L_\mathrm{SSE}}
+  {\pi_\mathrm{SSE}\, L_\mathrm{SSE} + \pi_\mathrm{SSI}\, L_\mathrm{SSI}},
+  \qquad
+  \mathrm{PMO}_\mathrm{avg}
+  \;=\; \pi_\mathrm{SSE}^\star\,\mathrm{PMO}_\mathrm{SSE}
+  + \pi_\mathrm{SSI}^\star\,\mathrm{PMO}_\mathrm{SSI}.
+\end{equation}
 
 \subsection{Likelihood of the observed history}
 \label{sec:likelihood}
@@ -303,6 +384,16 @@ factorises into a product of negative-binomial pmfs,
   k\lambda_t\bigr).
 \end{equation}
 This closed form is available for any history.
+
+\paragraph{Poisson model.}  Likewise, the day-$t$ count satisfies
+$I_t \mid I_{<t} \sim \mathrm{Poisson}(R_0 \lambda_t)$, so the joint
+likelihood factorises into a product of Poisson pmfs,
+\begin{equation}\label{eq:L_poisson_general}
+  L_\mathrm{Poisson}(I_1, \ldots, I_r \mid I_0)
+  \;=\; \prod_{t=1}^r \mathrm{Poisson}\!\bigl(I_t;\, R_0 \lambda_t\bigr),
+\end{equation}
+closed-form for any history.  As with \eqref{eq:L_sse_general}, the
+convention is $\log L = -\infty$ whenever $\lambda_t = 0$ but $I_t > 0$.
 
 \paragraph{SSI model, closed-form cases.}  Closed forms are available in the
 same three special cases as for $q_r$ (cases on day~$0$ only, on day~$0$ and
@@ -340,8 +431,12 @@ estimators of \eqref{eq:L_ssi_integral} are derived in
 \label{sec:simulation}
 
 For general histories, where the SSI likelihood is unavailable in closed
-form, we use a rejection-sampling estimator that simultaneously realises the
-posterior model weighting.  Repeat the following in batches of size $b$:
+form, we use a rejection-sampling estimator that simultaneously realises
+the posterior model weighting.  We describe it for
+$\mathcal{M} = \{\mathrm{SSE}, \mathrm{SSI}\}$; it extends to any finite
+$\mathcal{M}$ by replacing the Binomial split below with a Multinomial
+split by prior, and the acceptance-rate argument carries over unchanged.
+Repeat the following in batches of size $b$:
 
 \begin{enumerate}
   \item Draw the per-batch model split as a Binomial:
@@ -781,7 +876,7 @@ We describe three estimators of the integral
 $\pi(Y) = \prod_{t \in \mathcal T} p_Y(Y_t \mid I_t)$
 for the integrand's prior factor restricted to the active days
 $\mathcal{T} = \{t \in \{0,\ldots,r-1\} : I_t > 0\}$ (a product of
-independent Gammas, treating the observed cohort sizes $I_t$ as fixed
+  independent Gammas, treating the observed cohort sizes $I_t$ as fixed
 shape parameters), and
 $\mathcal L(Y) = \prod_{t=1}^{r} p_I(I_t \mid Y_{0:t-1})$
 for the integrand's likelihood factor, the target is
@@ -813,7 +908,8 @@ Gamma$(kI_t,k)$ samples for each $t \in \mathcal T$.  In log space the
 implementation is
 \begin{equation*}
   \log \widehat L_\mathrm{SSI}^{\,\mathrm{naive}}
-  \;=\; \operatornamewithlimits{logsumexp}_{n=1,\ldots,N}\!\log \mathcal L(Y^{(n)}) \;-\; \log N.
+  \;=\; \operatornamewithlimits{logsumexp}_{n=1,\ldots,N}\!\log
+  \mathcal L(Y^{(n)}) \;-\; \log N.
 \end{equation*}
 
 The estimator is unbiased.  Its relative variance is
@@ -884,7 +980,7 @@ The starting identity (Meng \& Wong, 1996) is the algebraic equality
   L_\mathrm{SSI}
   \;=\;
   \frac{\mathbb E_{Y \sim g}\!\bigl[\tilde p(Y)\, \alpha(Y)\bigr]}
-       {\mathbb E_{Y \sim p_\mathrm{post}}\!\bigl[g(Y)\, \alpha(Y)\bigr]},
+  {\mathbb E_{Y \sim p_\mathrm{post}}\!\bigl[g(Y)\, \alpha(Y)\bigr]},
 \end{equation}
 valid for any $\alpha$ such that
 $0 < \int g(Y) \tilde p(Y) \alpha(Y)\, \mathrm{d}Y < \infty$.  The
@@ -914,9 +1010,11 @@ expectations by Monte Carlo averages produces the fixed-point identity
   L_\mathrm{SSI}
   \;=\;
   \frac{\displaystyle \frac{1}{N_2}\sum_{i=1}^{N_2}
-        \frac{\tilde p(Y^{q,(i)})}{s_1\, g(Y^{q,(i)}) + s_2\, \tilde p(Y^{q,(i)})/L_\mathrm{SSI}}}
-       {\displaystyle \frac{1}{N_1}\sum_{j=1}^{N_1}
-        \frac{g(Y^{p,(j)})}{s_1\, g(Y^{p,(j)}) + s_2\, \tilde p(Y^{p,(j)})/L_\mathrm{SSI}}}.
+    \frac{\tilde p(Y^{q,(i)})}{s_1\, g(Y^{q,(i)}) + s_2\, \tilde
+  p(Y^{q,(i)})/L_\mathrm{SSI}}}
+  {\displaystyle \frac{1}{N_1}\sum_{j=1}^{N_1}
+    \frac{g(Y^{p,(j)})}{s_1\, g(Y^{p,(j)}) + s_2\, \tilde
+  p(Y^{p,(j)})/L_\mathrm{SSI}}}.
 \end{equation}
 Solving \eqref{eq:L_ssi_bridge} for $L_\mathrm{SSI}$ requires iterating
 the right-hand side from an initial guess.  Bridge sampling has lower
@@ -938,12 +1036,14 @@ the log-space iteration
 \begin{multline}\label{eq:L_ssi_bridge_logspace}
   \log L^{(t+1)} \;=\;
   \operatornamewithlimits{logsumexp}_{i=1,\ldots,N_2}
-    \!\Bigl[\,\ell_q^{(i)} -
-            \mathrm{lse}\bigl(\log s_1,\, \log s_2 + \ell_q^{(i)} - \log L^{(t)}\bigr)\Bigr]
+  \!\Bigl[\,\ell_q^{(i)} -
+    \mathrm{lse}\bigl(\log s_1,\, \log s_2 + \ell_q^{(i)} - \log
+  L^{(t)}\bigr)\Bigr]
   - \log N_2 \\
   \;-\;
   \operatornamewithlimits{logsumexp}_{j=1,\ldots,N_1}
-    \!\Bigl[\,-\mathrm{lse}\bigl(\log s_1,\, \log s_2 + \ell_p^{(j)} - \log L^{(t)}\bigr)\Bigr]
+  \!\Bigl[\,-\mathrm{lse}\bigl(\log s_1,\, \log s_2 + \ell_p^{(j)} -
+  \log L^{(t)}\bigr)\Bigr]
   + \log N_1,
 \end{multline}
 where $\mathrm{lse}(a,b) = \log(e^a + e^b)$.  We use the same Gamma

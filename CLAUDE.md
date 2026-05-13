@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Research code accompanying the manuscript in `notes/notes.tex` (compiled to `notes/notes.pdf`). Computes the **probability of major outbreak (PMO)** after an observed incidence history under three branching-process offspring models — **SSE** (Superspreading Events, NB offspring), **SSI** (Superspreading Individuals, latent-Gamma Poisson offspring), and **Poisson** (the `k → ∞` limit of either). Supports closed-form, Monte-Carlo, and MCMC backends, plus Bayesian model averaging across them.
 
-`notes/notes.tex` is the source of truth for the derivations the code implements — read it (or the compiled PDF) before changing any analytic formula.
+`notes/notes.tex` is the source of truth for the derivations the code implements — read it (or the compiled PDF) before changing any analytic formula. The notes are intended to stand alone,
+and therefore should not reference code details.
 
 ## Tooling
 

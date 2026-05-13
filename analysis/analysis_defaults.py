@@ -64,3 +64,29 @@ FIG5_SIM_MAX_ATTEMPTS: int = 8_000_000
 FIG6_PRIOR_SSE: float = 0.5
 FIG6_HISTORY_LENGTHS: list[int] = [2, 3]
 FIG6_N_SIM: int = 5000
+
+# fig7 is reserved for a separate figure not implemented in this branch.
+
+# --- figure 8 (PMO vs r with uncertain R0) ---
+FIG8_R_MAX: int = FIG1_R_MAX
+FIG8_R0_PRIOR_MEAN: float = DEFAULT_R0
+FIG8_R0_PRIOR_SD: float = 0.5
+FIG8_MCMC_DRAWS: int = FIG4_MCMC_DRAWS
+FIG8_MCMC_TUNE: int = FIG4_MCMC_TUNE
+FIG8_MCMC_CHAINS: int = FIG4_MCMC_CHAINS
+FIG8_SIM_N: int = SIM_N_SSI
+FIG8_SIM_BATCH: int = SIM_BATCH_SSI
+FIG8_SIM_MAX_ATTEMPTS: int = SIM_MAX_ATTEMPTS_SSI
+FIG8_CRI_LEVEL: float = 0.95
+
+# --- figure 9 (model-uncertain PMO across histories with uncertain R0) ---
+FIG9_HISTORIES: list[list[int]] = FIG5_HISTORIES
+FIG9_R0_PRIOR_MEAN: float = FIG8_R0_PRIOR_MEAN
+FIG9_R0_PRIOR_SD: float = FIG8_R0_PRIOR_SD
+FIG9_PRIOR_SSE: float = FIG5_PRIOR_SSE
+FIG9_MCMC_DRAWS: int = FIG4_MCMC_DRAWS
+FIG9_MCMC_TUNE: int = FIG4_MCMC_TUNE
+FIG9_MCMC_CHAINS: int = FIG4_MCMC_CHAINS
+FIG9_SIM_N: int = FIG5_SIM_N
+FIG9_SIM_BATCH: int = FIG5_SIM_BATCH
+FIG9_SIM_MAX_ATTEMPTS: int = FIG5_SIM_MAX_ATTEMPTS

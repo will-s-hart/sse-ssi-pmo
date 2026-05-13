@@ -5,7 +5,7 @@ Three top-level functions, each taking the observed incidence
 ``w`` and dispatching to either an analytic closed-form or a Monte-Carlo
 simulation:
 
-* :func:`pmo_sse` — SSE model; ``method ∈ {"analytic", "simulation"}``.
+* :func:`pmo_sse` — SSE model; ``method ∈ {"analytic", "simulation", "mcmc"}``.
 * :func:`pmo_ssi` — SSI model; ``method ∈ {"analytic", "simulation", "mcmc"}``.
   ``"analytic"`` only supports histories with cases on day 0 alone (followed
   by zeros). ``"mcmc"`` samples the latent infectivities via HMC and averages
@@ -13,7 +13,7 @@ simulation:
   for the derivation.
 * :func:`pmo_uncertain` — Bayesian model average across SSE and SSI given a
   prior ``prior_sse`` on the SSE model. ``method ∈ {"analytic",
-  "simulation"}``; ``"analytic"`` only supports the day-0-only history.
+  "simulation", "mcmc"}``; ``"analytic"`` only supports the day-0-only history.
   Returns a :class:`PmoUncertainResult` NamedTuple with the model-averaged
   PMO, the posterior probability of SSE, and the per-model PMOs.
 
@@ -21,6 +21,13 @@ All functions broadcast over ``R0`` and ``k`` (scalar or array). Scalar
 inputs return a Python ``float`` (or float-valued NamedTuple for
 ``pmo_uncertain``); array inputs return a NumPy array (or array-valued
 NamedTuple) of the broadcast shape.
+
+Either of ``R0`` and ``k`` may instead be a :class:`~sse_ssi_pmo.priors.Prior`
+(Gamma or LogNormal) — the function then integrates over the prior via
+MCMC (``method='mcmc'``) or rejection sampling (``method='simulation'``).
+``method='analytic'`` rejects Priors. When a Prior is passed, the
+broadcast over the other parameter is bypassed: the other parameter must
+be scalar.
 
 ``history`` may also be a 2-D ``(M, L)`` array (or list/tuple of
 equal-length 1-D arrays). The return then gains a *leading* length-``M``
@@ -40,26 +47,55 @@ call).
 
 from __future__ import annotations
 
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
 from sse_ssi_pmo._history import classify_history
+from sse_ssi_pmo.evidence import EvidenceMethod
 from sse_ssi_pmo.extinction import (
     _pmo_sse_analytic,
+    _pmo_sse_mcmc,
     _pmo_ssi_analytic,
     _pmo_ssi_mcmc,
     _pmo_uncertain_analytic,
     _pmo_uncertain_mcmc,
 )
-from sse_ssi_pmo.likelihood import SsiEvidenceMethod
+from sse_ssi_pmo.priors import Prior
 from sse_ssi_pmo.simulation import (
     _pmo_sse_sim,
     _pmo_ssi_sim_multi,
     _pmo_uncertain_sim_multi,
 )
+
+
+def _has_prior(R0, k) -> bool:
+    """Return ``True`` iff either argument is a :class:`Prior`."""
+    return isinstance(R0, Prior) or isinstance(k, Prior)
+
+
+def _validate_prior_method(R0, k, method: str, fn_label: str) -> None:
+    """Raise if a :class:`Prior` was supplied with ``method='analytic'``.
+
+    Also reject the (Prior, array-valued other parameter) combination — the
+    broadcast-over-(R0, k) loop is bypassed under priors, so an array-valued
+    counterpart has no defined semantics.
+    """
+    if not _has_prior(R0, k):
+        return
+    if method == "analytic":
+        raise ValueError(
+            f"{fn_label}(method='analytic') does not accept a Prior on R0/k; "
+            "use method='mcmc' or method='simulation'."
+        )
+    other = k if isinstance(R0, Prior) else R0
+    if not isinstance(other, Prior) and np.ndim(other) > 0:
+        raise ValueError(
+            f"{fn_label}: when one of R0/k is a Prior, the other must be a scalar "
+            f"(got shape {np.shape(other)})."
+        )
 
 
 class PmoUncertainResult(NamedTuple):
@@ -244,11 +280,11 @@ def _collapse_leading(
 
 def pmo_sse(
     *,
-    R0: ArrayLike,
-    k: ArrayLike,
+    R0: ArrayLike | Prior,
+    k: ArrayLike | Prior,
     w: ArrayLike,
     history: ArrayLike,
-    method: Literal["analytic", "simulation"],
+    method: Literal["analytic", "simulation", "mcmc"],
     **kwargs,
 ) -> float | NDArray[np.float64]:
     """Probability of major outbreak under the SSE model.
@@ -257,7 +293,9 @@ def pmo_sse(
     ----------
     R0, k
         Reproduction number and dispersion parameter; scalar or array
-        (broadcast jointly).
+        (broadcast jointly), or a :class:`~sse_ssi_pmo.priors.Prior` instance
+        to integrate over a Gamma / LogNormal prior on that parameter via
+        MCMC or rejection sampling. ``method='analytic'`` rejects Priors.
     w
         Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``;
         treated as a non-negative 1-D array (need not sum to exactly 1, but
@@ -268,39 +306,69 @@ def pmo_sse(
         equal-length 1-D arrays) stacking ``M`` histories. Non-negative
         integers, every row's first entry must be ``>= 1``.
     method
-        ``"analytic"`` for the closed-form ``1 - q ** Lambda``;
-        ``"simulation"`` for a Monte-Carlo estimate (forwarded to the SSE
-        simulation backend; takes ``n_sims``, ``threshold``, ``t_max``,
-        ``rng``, ``show_progress`` as keyword arguments). Multi-history
-        input loops over rows (SSE has no shared-work payoff).
+        ``"analytic"`` for the closed-form ``1 - q ** Lambda`` at fixed
+        ``(R0, k)``; ``"simulation"`` for a Monte-Carlo estimate (forwarded
+        to the SSE simulation backend; takes ``n_sims``, ``threshold``,
+        ``t_max``, ``rng``, ``show_progress`` as keyword arguments).
+        ``"mcmc"`` is only meaningful when a :class:`Prior` is supplied:
+        ``fit_sse`` runs over the prior on ``(R0, k)`` and the closed-form
+        analytic PMO is averaged over the posterior draws. With both
+        scalars ``"mcmc"`` short-circuits to the closed form.
+        Pass ``datatree=`` to reuse a pre-existing ``fit_sse`` trace.
+        Multi-history input loops over rows (SSE has no shared-work payoff).
     """
     w_arr = np.asarray(w, dtype=np.float64)
     hist_2d, was_1d = _validate_histories(history)
-    scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+    _validate_prior_method(R0, k, method, "pmo_sse")
     M = hist_2d.shape[0]
 
+    if _has_prior(R0, k):
+        # Bypass the (R0, k) broadcast loop — _validate_prior_method guarantees
+        # the non-prior parameter is a scalar, so narrowing to float | Prior is safe.
+        R0_p = cast("float | Prior", R0)
+        k_p = cast("float | Prior", k)
+        if method == "simulation":
+            per_row = [_pmo_sse_sim(R0_p, k_p, w_arr, hist_2d[m], **kwargs) for m in range(M)]
+        elif method == "mcmc":
+            per_row = [_pmo_sse_mcmc(R0_p, k_p, w_arr, hist_2d[m], **kwargs) for m in range(M)]
+        else:
+            raise ValueError(
+                f"pmo_sse: method must be 'mcmc' or 'simulation' under priors, got {method!r}"
+            )
+        out = np.asarray(per_row, dtype=np.float64)
+        return float(out[0]) if was_1d else out
+
+    R0_a = cast("ArrayLike", R0)
+    k_a = cast("ArrayLike", k)
+    scalar_inputs = np.ndim(R0_a) == 0 and np.ndim(k_a) == 0
     if method == "analytic":
         if kwargs:
             raise TypeError(
                 f"pmo_sse(method='analytic') got unexpected keyword arguments: {sorted(kwargs)}"
             )
-        # _pmo_sse_analytic broadcasts over (R0, k) internally; loop over histories.
-        per_row = [_pmo_sse_analytic(R0, k, w_arr, hist_2d[m]) for m in range(M)]
+        per_row = [_pmo_sse_analytic(R0_a, k_a, w_arr, hist_2d[m]) for m in range(M)]
         out = np.stack([np.asarray(r, dtype=np.float64) for r in per_row], axis=0)
     elif method == "simulation":
         out = _dispatch_h_scalar(
-            _pmo_sse_sim, R0, k, w_arr, hist_2d, "pmo_sse", kwargs, native_multi=False
+            _pmo_sse_sim, R0_a, k_a, w_arr, hist_2d, "pmo_sse", kwargs, native_multi=False
+        )
+    elif method == "mcmc":
+        # Fixed (R0, k) shortcut: SSE PMO is closed-form, _pmo_sse_mcmc returns it directly.
+        out = _dispatch_h_scalar(
+            _pmo_sse_mcmc, R0_a, k_a, w_arr, hist_2d, "pmo_sse_mcmc", kwargs, native_multi=False
         )
     else:
-        raise ValueError(f"pmo_sse: method must be 'analytic' or 'simulation', got {method!r}")
+        raise ValueError(
+            f"pmo_sse: method must be 'analytic', 'simulation', or 'mcmc', got {method!r}"
+        )
 
     return _collapse_leading(out, was_1d=was_1d, scalar_inputs=scalar_inputs)
 
 
 def pmo_ssi(
     *,
-    R0: ArrayLike,
-    k: ArrayLike,
+    R0: ArrayLike | Prior,
+    k: ArrayLike | Prior,
     w: ArrayLike,
     history: ArrayLike,
     method: Literal["analytic", "simulation", "mcmc"],
@@ -312,7 +380,9 @@ def pmo_ssi(
     ----------
     R0, k
         Reproduction number and dispersion parameter; scalar or array
-        (broadcast jointly).
+        (broadcast jointly), or a :class:`~sse_ssi_pmo.priors.Prior` instance
+        to integrate over a Gamma / LogNormal prior (only ``method='mcmc'``
+        or ``method='simulation'`` accept Priors).
     w
         Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``.
     history
@@ -333,13 +403,31 @@ def pmo_ssi(
         ``"mcmc"`` for a Monte-Carlo estimate via MCMC over the latent
         infectivities (see ``notes/notes.tex``); keyword arguments are
         forwarded to ``pm.sample`` (e.g. ``draws``, ``tune``, ``chains``,
-        ``progressbar``) plus ``thin`` for posterior thinning.
+        ``progressbar``) plus ``thin`` for posterior thinning. Pass
+        ``datatree=`` to reuse a pre-existing ``fit_ssi`` trace.
     """
     w_arr = np.asarray(w, dtype=np.float64)
     hist_2d, was_1d = _validate_histories(history)
-    scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+    _validate_prior_method(R0, k, method, "pmo_ssi")
     M = hist_2d.shape[0]
 
+    if _has_prior(R0, k):
+        R0_p = cast("float | Prior", R0)
+        k_p = cast("float | Prior", k)
+        if method == "simulation":
+            out_arr = _pmo_ssi_sim_multi(R0_p, k_p, w_arr, hist_2d, **kwargs)
+            return float(out_arr[0]) if was_1d else out_arr
+        if method == "mcmc":
+            per_row = [_pmo_ssi_mcmc(R0_p, k_p, w_arr, hist_2d[m], **kwargs) for m in range(M)]
+            out = np.asarray(per_row, dtype=np.float64)
+            return float(out[0]) if was_1d else out
+        raise ValueError(
+            f"pmo_ssi: method must be 'mcmc' or 'simulation' under priors, got {method!r}"
+        )
+
+    R0_a = cast("ArrayLike", R0)
+    k_a = cast("ArrayLike", k)
+    scalar_inputs = np.ndim(R0_a) == 0 and np.ndim(k_a) == 0
     if method == "analytic":
         if kwargs:
             raise TypeError(
@@ -354,15 +442,15 @@ def pmo_ssi(
                     f"row {m} has non-zero cases on day(s) {offending_days}. "
                     "Use method='simulation' or method='mcmc'."
                 )
-        per_row = [_pmo_ssi_analytic(R0, k, w_arr, hist_2d[m]) for m in range(M)]
+        per_row = [_pmo_ssi_analytic(R0_a, k_a, w_arr, hist_2d[m]) for m in range(M)]
         out = np.stack([np.asarray(r, dtype=np.float64) for r in per_row], axis=0)
     elif method == "simulation":
         out = _dispatch_h_scalar(
-            _pmo_ssi_sim_multi, R0, k, w_arr, hist_2d, "pmo_ssi", kwargs, native_multi=True
+            _pmo_ssi_sim_multi, R0_a, k_a, w_arr, hist_2d, "pmo_ssi", kwargs, native_multi=True
         )
     elif method == "mcmc":
         out = _dispatch_h_scalar(
-            _pmo_ssi_mcmc, R0, k, w_arr, hist_2d, "pmo_ssi_mcmc", kwargs, native_multi=False
+            _pmo_ssi_mcmc, R0_a, k_a, w_arr, hist_2d, "pmo_ssi_mcmc", kwargs, native_multi=False
         )
     else:
         raise ValueError(
@@ -374,13 +462,13 @@ def pmo_ssi(
 
 def pmo_uncertain(
     *,
-    R0: ArrayLike,
-    k: ArrayLike,
+    R0: ArrayLike | Prior,
+    k: ArrayLike | Prior,
     w: ArrayLike,
     history: ArrayLike,
     method: Literal["analytic", "simulation", "mcmc"],
     prior_sse: float = 0.5,
-    ssi_evidence_method: SsiEvidenceMethod = "bridge",
+    evidence_method: EvidenceMethod = "bridge",
     **kwargs,
 ) -> PmoUncertainResult:
     """Bayesian model-averaged probability of major outbreak.
@@ -394,7 +482,10 @@ def pmo_uncertain(
     ----------
     R0, k
         Reproduction number and dispersion parameter; scalar or array
-        (broadcast jointly). The same ``(R0, k)`` is used for both models.
+        (broadcast jointly), or a :class:`~sse_ssi_pmo.priors.Prior` instance
+        to integrate over a prior. The same ``(R0, k)`` (or prior) is used
+        for both models. Priors are accepted only by ``method='mcmc'`` and
+        ``method='simulation'``.
     w
         Discrete serial-interval weights, ``w[s-1] = w_s`` for ``s = 1, 2, ...``.
     history
@@ -411,20 +502,24 @@ def pmo_uncertain(
         same ``I_0``); for 1-D it falls through the same backend with
         ``M = 1``.
         ``"mcmc"`` for an MCMC-based estimator that handles any history:
-        SSE stays closed-form; SSI uses ``fit_ssi`` once per row for the
-        trace and reuses it for both the SSI PMO and the SSI marginal
-        log-likelihood. Takes ``ssi_evidence_method``, ``rng``,
-        ``n_evidence_samples`` plus ``pm.sample`` keyword arguments
-        (``draws``, ``tune``, ``chains``, ``thin``, ``progressbar``,
-        ``target_accept``, …).
+        SSE stays closed-form at fixed ``(R0, k)``, but is averaged over
+        the fit_sse trace when a :class:`Prior` is supplied; SSI uses
+        ``fit_ssi`` once per row for the trace and reuses it for both the
+        SSI PMO and the SSI log model evidence. Pass ``datatree_sse=`` /
+        ``datatree_ssi=`` to reuse pre-existing traces. Takes
+        ``evidence_method``, ``rng``, ``n_evidence_samples`` plus
+        ``pm.sample`` keyword arguments (``draws``, ``tune``, ``chains``,
+        ``thin``, ``progressbar``, ``target_accept``, …).
     prior_sse
         Prior probability of the SSE model in ``[0, 1]``. Default ``0.5``.
-    ssi_evidence_method
-        Estimator used for ``log L_SSI`` under ``method='mcmc'``: ``"bridge"``
-        (default; Meng-Wong bridge sampling), ``"importance_sampling"``, or
-        ``"naive"`` (Gamma-prior Monte Carlo, no MCMC trace required for the
-        likelihood part — the trace is still run for the SSI PMO). Ignored
-        when ``method`` is ``"analytic"`` or ``"simulation"``.
+    evidence_method
+        Estimator used for the log model evidences under ``method='mcmc'``:
+        ``"bridge"`` (default; Meng-Wong bridge sampling),
+        ``"importance_sampling"``, or ``"naive"`` (no MCMC trace required
+        for the SSI evidence). With fixed ``(R0, k)`` only the SSI side
+        needs an MCMC estimator (SSE is closed-form); under priors on
+        ``R0``/``k`` the same knob also selects the estimator for the SSE
+        side. Ignored when ``method`` is ``"analytic"`` or ``"simulation"``.
 
     Returns
     -------
@@ -436,10 +531,45 @@ def pmo_uncertain(
         raise ValueError("prior_sse must lie in [0, 1]")
     w_arr = np.asarray(w, dtype=np.float64)
     hist_2d, was_1d = _validate_histories(history)
-    scalar_inputs = np.ndim(R0) == 0 and np.ndim(k) == 0
+    _validate_prior_method(R0, k, method, "pmo_uncertain")
     M = hist_2d.shape[0]
     output_keys = ("pmo", "posterior_sse", "pmo_sse", "pmo_ssi")
 
+    if _has_prior(R0, k):
+        R0_p = cast("float | Prior", R0)
+        k_p = cast("float | Prior", k)
+        if method == "simulation":
+            kwargs["prior_sse"] = prior_sse
+            out_dict = _pmo_uncertain_sim_multi(R0_p, k_p, w_arr, hist_2d, **kwargs)
+        elif method == "mcmc":
+            kwargs["prior_sse"] = prior_sse
+            kwargs["evidence_method"] = evidence_method
+            per_row = [
+                _pmo_uncertain_mcmc(R0_p, k_p, w_arr, hist_2d[m], **kwargs) for m in range(M)
+            ]
+            out_dict = {
+                key: np.asarray([r[key] for r in per_row], dtype=np.float64)
+                for key in output_keys
+            }
+        else:
+            raise ValueError(
+                f"pmo_uncertain: method must be 'mcmc' or 'simulation' under priors, "
+                f"got {method!r}"
+            )
+
+        def _maybe_scalar(arr):
+            return float(arr[0]) if was_1d else arr
+
+        return PmoUncertainResult(
+            pmo=_maybe_scalar(out_dict["pmo"]),
+            posterior_sse=_maybe_scalar(out_dict["posterior_sse"]),
+            pmo_sse=_maybe_scalar(out_dict["pmo_sse"]),
+            pmo_ssi=_maybe_scalar(out_dict["pmo_ssi"]),
+        )
+
+    R0_a = cast("ArrayLike", R0)
+    k_a = cast("ArrayLike", k)
+    scalar_inputs = np.ndim(R0_a) == 0 and np.ndim(k_a) == 0
     if method == "analytic":
         if kwargs:
             raise TypeError(
@@ -455,7 +585,9 @@ def pmo_uncertain(
                     f"row {m} has non-zero cases on day(s) {offending_days}. "
                     "Use method='simulation' or method='mcmc'."
                 )
-        per_row = [_pmo_uncertain_analytic(R0, k, w_arr, hist_2d[m], prior_sse) for m in range(M)]
+        per_row = [
+            _pmo_uncertain_analytic(R0_a, k_a, w_arr, hist_2d[m], prior_sse) for m in range(M)
+        ]
         result = {
             key: np.stack([np.asarray(r[key], dtype=np.float64) for r in per_row], axis=0)
             for key in output_keys
@@ -464,8 +596,8 @@ def pmo_uncertain(
         kwargs["prior_sse"] = prior_sse
         result = _dispatch_h_dict(
             _pmo_uncertain_sim_multi,
-            R0,
-            k,
+            R0_a,
+            k_a,
             w_arr,
             hist_2d,
             "pmo_uncertain",
@@ -475,11 +607,11 @@ def pmo_uncertain(
         )
     elif method == "mcmc":
         kwargs["prior_sse"] = prior_sse
-        kwargs["ssi_evidence_method"] = ssi_evidence_method
+        kwargs["evidence_method"] = evidence_method
         result = _dispatch_h_dict(
             _pmo_uncertain_mcmc,
-            R0,
-            k,
+            R0_a,
+            k_a,
             w_arr,
             hist_2d,
             "pmo_uncertain_mcmc",

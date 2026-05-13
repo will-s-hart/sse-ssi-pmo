@@ -20,6 +20,11 @@ Private API (used by :mod:`sse_ssi_pmo.pmo`):
   history. The acceptance-rate ratio implicitly realises the Bayesian
   posterior over models.
 
+The batched simulators (:func:`_batch_sse`, :func:`_batch_ssi`) accept
+``R0`` and ``k`` as either scalars or per-sim ``(n_sims,)`` arrays; the
+array case is used by the parameter-uncertain code path, which draws fresh
+``(R0, k)`` per batch from the user-supplied :class:`Prior`.
+
 The simulation parameterisation matches the offspring distributions used in
 ``extinction.py`` and described in ``notes/notes.tex``:
 
@@ -34,18 +39,29 @@ The simulation parameterisation matches the offspring distributions used in
 from __future__ import annotations
 
 import warnings
+from collections.abc import Callable
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
+
+from sse_ssi_pmo.priors import Prior
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
 
-def _check_inputs(R0: float, k: float, w: NDArray[np.float64], threshold: int, t_max: int) -> None:
-    if R0 <= 0.0 or k <= 0.0:
+def _check_inputs(
+    R0: float | NDArray[np.float64],
+    k: float | NDArray[np.float64],
+    w: NDArray[np.float64],
+    threshold: int,
+    t_max: int,
+) -> None:
+    R0_arr = np.asarray(R0, dtype=np.float64)
+    k_arr = np.asarray(k, dtype=np.float64)
+    if (R0_arr <= 0.0).any() or (k_arr <= 0.0).any():
         raise ValueError("R0 and k must be positive")
     if w.ndim != 1 or w.size == 0:
         raise ValueError("w must be a non-empty 1-D array")
@@ -53,6 +69,84 @@ def _check_inputs(R0: float, k: float, w: NDArray[np.float64], threshold: int, t
         raise ValueError("threshold must be at least 1")
     if t_max < 1:
         raise ValueError("t_max must be at least 1")
+
+
+def _expand_param(
+    x: float | NDArray[np.float64], n_sims: int, label: str
+) -> NDArray[np.float64]:
+    """Broadcast a scalar to ``(n_sims,)``; pass through arrays of that length.
+
+    Raises if ``x`` is an array of any other length.
+    """
+    arr = np.asarray(x, dtype=np.float64)
+    if arr.ndim == 0:
+        return np.full(n_sims, float(arr), dtype=np.float64)
+    if arr.ndim == 1 and arr.size == n_sims:
+        return arr.astype(np.float64, copy=False)
+    raise ValueError(
+        f"{label}: expected a scalar or 1-D array of length {n_sims}, got shape {arr.shape}"
+    )
+
+
+def _maybe_draw(
+    x: float | Prior, n_sims: int, rng: np.random.Generator
+) -> NDArray[np.float64]:
+    """Per-sim parameter array: draw from a :class:`Prior` or broadcast a scalar."""
+    if isinstance(x, Prior):
+        return x.sample(n_sims, rng)
+    return np.full(n_sims, float(x), dtype=np.float64)
+
+
+def _check_param_spec(
+    R0: float | Prior,
+    k: float | Prior,
+    w: NDArray[np.float64],
+    threshold: int,
+    t_max: int,
+) -> None:
+    """Validate R0/k (scalar-or-:class:`Prior`) + ``(w, threshold, t_max)`` jointly."""
+    if not isinstance(R0, Prior) and float(R0) <= 0.0:
+        raise ValueError("R0 must be positive")
+    if not isinstance(k, Prior) and float(k) <= 0.0:
+        raise ValueError("k must be positive")
+    if w.ndim != 1 or w.size == 0:
+        raise ValueError("w must be a non-empty 1-D array")
+    if threshold < 1:
+        raise ValueError("threshold must be at least 1")
+    if t_max < 1:
+        raise ValueError("t_max must be at least 1")
+
+
+def _rejection_loop(
+    *,
+    n_sims: int,
+    batch_size: int,
+    max_attempts: int,
+    M: int,
+    is_done: Callable[[], bool],
+    progress_count: Callable[[], int],
+    run_batch: Callable[[int], None],
+    show_progress: bool,
+    desc: str,
+) -> int:
+    """Drive a rejection-sampling loop, calling ``run_batch(b)`` per batch.
+
+    Continues until ``is_done()`` returns True or ``max_attempts`` total
+    trajectories have been tried. ``progress_count`` returns the current
+    count to display on the optional progress bar (clipped at ``n_sims * M``).
+    Returns the total number of trajectories attempted.
+    """
+    n_attempted = 0
+    pbar = tqdm(total=n_sims * M, desc=desc, leave=False) if show_progress else None
+    while not is_done() and n_attempted < max_attempts:
+        b = min(batch_size, max_attempts - n_attempted)
+        run_batch(b)
+        n_attempted += b
+        if pbar is not None:
+            pbar.update(progress_count() - pbar.n)
+    if pbar is not None:
+        pbar.close()
+    return n_attempted
 
 
 # ---------------------------------------------------------------------------
@@ -152,8 +246,8 @@ def _resolution_index(traj: NDArray[np.int64], L: int, threshold: int) -> int:
 
 
 def _batch_sse(
-    R0: float,
-    k: float,
+    R0: float | NDArray[np.float64],
+    k: float | NDArray[np.float64],
     w: NDArray[np.float64],
     init_incidence: NDArray[np.int64],
     *,
@@ -173,6 +267,11 @@ def _batch_sse(
     all-zero) and the indeterminate-at-``t_max`` mask reduces to
     ``~(major | extinct)``.
 
+    ``R0`` and ``k`` may be scalars (broadcast to every sim) or per-sim
+    ``(n_sims,)`` arrays. The per-sim case is used by the
+    parameter-uncertain code path, where fresh ``(R0, k)`` are drawn from a
+    :class:`~sse_ssi_pmo.priors.Prior` once per batch.
+
     With ``match_histories`` provided (shape ``(M, L)``), the
     ``len(init_incidence)`` prefix of every row must equal ``init_incidence``
     (so the seeded incidence is consistent with all histories); sims are
@@ -181,6 +280,8 @@ def _batch_sse(
     ``match_histories`` are not allowed (each surviving sim must lock onto a
     unique matched-history index).
     """
+    R0_arr = _expand_param(R0, n_sims, "_batch_sse: R0")
+    k_arr = _expand_param(k, n_sims, "_batch_sse: k")
     L_w = len(w)
     history_len = len(init_incidence)
     if history_len > t_max:
@@ -220,7 +321,7 @@ def _batch_sse(
     else:
         extinct = np.zeros(n_sims, dtype=bool)
     extinct &= ~major
-    p_nb = k / (k + R0)
+    p_nb_full = k_arr / (k_arr + R0_arr)
     w_rev_cache: dict[int, NDArray[np.float64]] = {}
 
     for t in range(history_len, t_max):
@@ -236,7 +337,8 @@ def _batch_sse(
         new_inc = np.zeros(idx.size, dtype=np.int64)
         nz = foi > 0.0
         if nz.any():
-            new_inc[nz] = rng.negative_binomial(k * foi[nz], p_nb)
+            sel = idx[nz]
+            new_inc[nz] = rng.negative_binomial(k_arr[sel] * foi[nz], p_nb_full[sel])
         incidence[idx, t] = new_inc
 
         if t < match_len:
@@ -262,8 +364,8 @@ def _batch_sse(
 
 
 def _batch_ssi(
-    R0: float,
-    k: float,
+    R0: float | NDArray[np.float64],
+    k: float | NDArray[np.float64],
     w: NDArray[np.float64],
     *,
     init_incidence: int,
@@ -283,11 +385,16 @@ def _batch_ssi(
     each surviving sim matches, or ``-1`` for abandoned sims. Without
     ``match_histories`` no post-day-0 matching is applied and
     ``matched_history`` is all-zero (the implicit single-history case).
+
+    ``R0`` and ``k`` may be scalars (broadcast to every sim) or per-sim
+    ``(n_sims,)`` arrays (parameter-uncertain code path).
     """
     if init_incidence < 1:
         raise ValueError("init_incidence must be at least 1 (I_0 >= 1)")
     if t_max < 1:
         raise ValueError("t_max must be at least 1")
+    R0_arr = _expand_param(R0, n_sims, "_batch_ssi: R0")
+    k_arr = _expand_param(k, n_sims, "_batch_ssi: k")
     L_w = len(w)
     if match_histories is not None:
         if match_histories.ndim != 2:
@@ -308,7 +415,7 @@ def _batch_ssi(
     incidence = np.zeros((n_sims, t_max), dtype=np.int64)
     incidence[:, 0] = init_incidence
     Y = np.zeros((n_sims, t_max), dtype=np.float64)
-    Y[:, 0] = rng.gamma(k * init_incidence, 1.0 / k, size=n_sims)
+    Y[:, 0] = rng.gamma(k_arr * init_incidence, 1.0 / k_arr)
 
     alive = np.ones((n_sims, M), dtype=bool)
     major = incidence[:, 0] >= threshold
@@ -324,7 +431,7 @@ def _batch_ssi(
         if L_use not in w_rev_cache:
             w_rev_cache[L_use] = w[:L_use][::-1].copy()
         recent_Y = Y[idx, t - L_use : t]
-        foi = R0 * (recent_Y @ w_rev_cache[L_use])
+        foi = R0_arr[idx] * (recent_Y @ w_rev_cache[L_use])
         new_inc = np.zeros(idx.size, dtype=np.int64)
         nz = foi > 0.0
         if nz.any():
@@ -333,7 +440,8 @@ def _batch_ssi(
         new_Y = np.zeros(idx.size, dtype=np.float64)
         nz_inc = new_inc > 0
         if nz_inc.any():
-            new_Y[nz_inc] = rng.gamma(k * new_inc[nz_inc], 1.0 / k)
+            k_sel = k_arr[idx[nz_inc]]
+            new_Y[nz_inc] = rng.gamma(k_sel * new_inc[nz_inc], 1.0 / k_sel)
         Y[idx, t] = new_Y
 
         if t < match_len:
@@ -364,8 +472,8 @@ def _batch_ssi(
 
 
 def _pmo_sse_sim(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: ArrayLike,
     history: ArrayLike,
     *,
@@ -382,18 +490,24 @@ def _pmo_sse_sim(
     (the operational definition of a "major outbreak"); the rest go extinct
     (last ``len(w)`` steps all zero).
 
+    ``R0``/``k`` may be :class:`~sse_ssi_pmo.priors.Prior` instances; in that
+    case a fresh per-sim draw is made from the prior before forward
+    simulation, so the returned PMO is the marginal under the prior.
+
     ``show_progress`` is accepted for signature symmetry with ``_pmo_ssi_sim``
     but has no effect: the SSE batch runs in a single vectorised call.
     """
     rng = np.random.default_rng() if rng is None else rng
     w_arr = np.asarray(w, dtype=np.float64)
     hist_arr = np.asarray(history, dtype=np.int64)
-    _check_inputs(R0, k, w_arr, threshold, t_max)
+    _check_param_spec(R0, k, w_arr, threshold, t_max)
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
+    R0_arr = _maybe_draw(R0, n_sims, rng)
+    k_arr = _maybe_draw(k, n_sims, rng)
 
     major, extinct, _matched, _ = _batch_sse(
-        R0, k, w_arr, hist_arr, n_sims=n_sims, threshold=threshold, t_max=t_max, rng=rng
+        R0_arr, k_arr, w_arr, hist_arr, n_sims=n_sims, threshold=threshold, t_max=t_max, rng=rng
     )
     n_indet = int((~(major | extinct)).sum())
     if n_indet:
@@ -436,8 +550,8 @@ def _validate_histories_for_sim(
 
 
 def _pmo_ssi_sim_multi(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: ArrayLike,
     histories: ArrayLike,
     *,
@@ -461,12 +575,16 @@ def _pmo_ssi_sim_multi(
     per-history PMO estimates; ``NaN`` for histories with no resolved
     matches.
 
+    ``R0``/``k`` may be :class:`~sse_ssi_pmo.priors.Prior` instances; in that
+    case fresh per-sim draws are made from the prior at the start of every
+    batch, so the returned PMOs are marginal under the prior.
+
     ``max_attempts`` defaults to ``200 * n_sims``.
     """
     rng = np.random.default_rng() if rng is None else rng
     w_arr = np.asarray(w, dtype=np.float64)
     hist_arr = np.asarray(histories, dtype=np.int64)
-    _check_inputs(R0, k, w_arr, threshold, t_max)
+    _check_param_spec(R0, k, w_arr, threshold, t_max)
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
     if batch_size < 1:
@@ -478,14 +596,13 @@ def _pmo_ssi_sim_multi(
     n_major = np.zeros(M, dtype=np.int64)
     n_extinct = np.zeros(M, dtype=np.int64)
     n_indet = np.zeros(M, dtype=np.int64)
-    n_attempted = 0
-    pbar = tqdm(total=n_sims * M, desc="SSI matching sims", leave=False) if show_progress else None
 
-    while (n_major + n_extinct).min() < n_sims and n_attempted < max_attempts:
-        b = min(batch_size, max_attempts - n_attempted)
+    def run_batch(b: int) -> None:
+        R0_batch = _maybe_draw(R0, b, rng)
+        k_batch = _maybe_draw(k, b, rng)
         major, extinct, matched, _ = _batch_ssi(
-            R0,
-            k,
+            R0_batch,
+            k_batch,
             w_arr,
             init_incidence=I_0,
             n_sims=b,
@@ -498,13 +615,18 @@ def _pmo_ssi_sim_multi(
         np.add.at(n_major, matched[ok & major], 1)
         np.add.at(n_extinct, matched[ok & extinct], 1)
         np.add.at(n_indet, matched[ok & ~(major | extinct)], 1)
-        n_attempted += b
-        if pbar is not None:
-            resolved = int((np.minimum(n_major + n_extinct, n_sims)).sum())
-            pbar.update(resolved - pbar.n)
 
-    if pbar is not None:
-        pbar.close()
+    n_attempted = _rejection_loop(
+        n_sims=n_sims,
+        batch_size=batch_size,
+        max_attempts=max_attempts,
+        M=M,
+        is_done=lambda: bool((n_major + n_extinct).min() >= n_sims),
+        progress_count=lambda: int(np.minimum(n_major + n_extinct, n_sims).sum()),
+        run_batch=run_batch,
+        show_progress=show_progress,
+        desc="SSI matching sims",
+    )
 
     n_indet_total = int(n_indet.sum())
     if n_indet_total:
@@ -528,8 +650,8 @@ def _pmo_ssi_sim_multi(
 
 
 def _pmo_ssi_sim(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: ArrayLike,
     history: ArrayLike,
     *,
@@ -560,8 +682,8 @@ def _pmo_ssi_sim(
 
 
 def _pmo_uncertain_sim_multi(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: ArrayLike,
     histories: ArrayLike,
     *,
@@ -581,11 +703,16 @@ def _pmo_uncertain_sim_multi(
     ``b_sse ~ Bin(batch_size, prior_sse)``; both sub-batches use the
     multi-history matching path. Returns a dict with keys ``pmo``,
     ``posterior_sse``, ``pmo_sse``, ``pmo_ssi`` — each a ``(M,)`` array.
+
+    ``R0``/``k`` may be :class:`~sse_ssi_pmo.priors.Prior` instances; the same
+    fresh per-sim ``(R0, k)`` draws are used for both SSE and SSI sub-batches
+    so the implicit posterior model split is sampled correctly under the
+    parameter prior.
     """
     rng = np.random.default_rng() if rng is None else rng
     w_arr = np.asarray(w, dtype=np.float64)
     hist_arr = np.asarray(histories, dtype=np.int64)
-    _check_inputs(R0, k, w_arr, threshold, t_max)
+    _check_param_spec(R0, k, w_arr, threshold, t_max)
     if n_sims < 1:
         raise ValueError("n_sims must be at least 1")
     if batch_size < 1:
@@ -605,26 +732,19 @@ def _pmo_uncertain_sim_multi(
     n_major_ssi = np.zeros(M, dtype=np.int64)
     n_extinct_ssi = np.zeros(M, dtype=np.int64)
     n_indet_ssi = np.zeros(M, dtype=np.int64)
-    n_attempted = 0
-
-    pbar = (
-        tqdm(total=n_sims * M, desc="uncertain matching sims", leave=False)
-        if show_progress
-        else None
-    )
 
     def _resolved_total() -> NDArray[np.int64]:
         return n_major_sse + n_extinct_sse + n_major_ssi + n_extinct_ssi
 
-    while _resolved_total().min() < n_sims and n_attempted < max_attempts:
-        b = min(batch_size, max_attempts - n_attempted)
+    def run_batch(b: int) -> None:
         b_sse = int(rng.binomial(b, prior_sse))
         b_ssi = b - b_sse
-
         if b_sse > 0:
+            R0_sse = _maybe_draw(R0, b_sse, rng)
+            k_sse = _maybe_draw(k, b_sse, rng)
             major, extinct, matched, _ = _batch_sse(
-                R0,
-                k,
+                R0_sse,
+                k_sse,
                 w_arr,
                 seed,
                 n_sims=b_sse,
@@ -638,9 +758,11 @@ def _pmo_uncertain_sim_multi(
             np.add.at(n_extinct_sse, matched[ok & extinct], 1)
             np.add.at(n_indet_sse, matched[ok & ~(major | extinct)], 1)
         if b_ssi > 0:
+            R0_ssi = _maybe_draw(R0, b_ssi, rng)
+            k_ssi = _maybe_draw(k, b_ssi, rng)
             major, extinct, matched, _ = _batch_ssi(
-                R0,
-                k,
+                R0_ssi,
+                k_ssi,
                 w_arr,
                 init_incidence=I_0,
                 n_sims=b_ssi,
@@ -654,13 +776,17 @@ def _pmo_uncertain_sim_multi(
             np.add.at(n_extinct_ssi, matched[ok & extinct], 1)
             np.add.at(n_indet_ssi, matched[ok & ~(major | extinct)], 1)
 
-        n_attempted += b
-        if pbar is not None:
-            resolved = int(np.minimum(_resolved_total(), n_sims).sum())
-            pbar.update(resolved - pbar.n)
-
-    if pbar is not None:
-        pbar.close()
+    n_attempted = _rejection_loop(
+        n_sims=n_sims,
+        batch_size=batch_size,
+        max_attempts=max_attempts,
+        M=M,
+        is_done=lambda: bool(_resolved_total().min() >= n_sims),
+        progress_count=lambda: int(np.minimum(_resolved_total(), n_sims).sum()),
+        run_batch=run_batch,
+        show_progress=show_progress,
+        desc="uncertain matching sims",
+    )
 
     n_indet_total = int(n_indet_sse.sum() + n_indet_ssi.sum())
     if n_indet_total:
@@ -696,8 +822,8 @@ def _pmo_uncertain_sim_multi(
 
 
 def _pmo_uncertain_sim(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: ArrayLike,
     history: ArrayLike,
     *,

@@ -29,6 +29,22 @@ To run a one-off script (e.g. during development): `pixi run python analysis/res
 
 The package is installed editable via `[tool.pixi.pypi-dependencies]` — edits under `src/sse_ssi_pmo/` take effect immediately.
 
+## Development
+
+The main branch is protected. Workflow for feature development:
+1. Create a feature branch off `main` (e.g. `feat/simulate_poisson`, `fix/`, `docs/`).
+2. Create a worktree for the branch and implement the feature there.
+3. Format, lint, and typecheck after making changes (`pixi run fmt lint typecheck`).
+4. For changes to the library, validate by running the relevant `pixi run res{N}` script(s)
+   and checking that analytic/simulation overlays still agree. Run additional ad-hoc
+   checks as needed.
+5. Commit regularly with descriptive messages and push to the remote branch.
+6. Open a draft PR to `main` when ready for review.
+7. Address review feedback with follow-up commits, repeating steps 3–5 as needed.
+8. Mark the PR ready for merge once all feedback is resolved.
+9. Remove the worktree and local branch after the PR is merged.
+   Merging itself is left to the user.
+
 ## Architecture
 
 ### `src/sse_ssi_pmo/` — library

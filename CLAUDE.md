@@ -4,10 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Research code accompanying the manuscript in `notes/notes.tex` (compiled to `notes/notes.pdf`). Computes the **probability of major outbreak (PMO)** after an observed incidence history under three branching-process offspring models — **SSE** (Superspreading Events, NB offspring), **SSI** (Superspreading Individuals, latent-Gamma Poisson offspring), and **Poisson** (the `k → ∞` limit of either). Supports closed-form, Monte-Carlo, and MCMC backends, plus Bayesian model averaging across them.
+Research code accompanying the methodological framework in `notes/notes.tex` (compiled to
+`notes/notes.pdf`). Computes the **probability of major outbreak (PMO)** after an observed
+incidence history under three branching-process offspring models — **SSE** (Superspreading
+Events, NB offspring), **SSI** (Superspreading Individuals, latent-Gamma Poisson offspring),
+and **Poisson** (the `k → ∞` limit of either). Supports closed-form, Monte-Carlo, and MCMC
+backends, plus Bayesian model averaging across them.
 
-`notes/notes.tex` is the source of truth for the derivations the code implements — read it (or the compiled PDF) before changing any analytic formula. The notes are intended to stand alone,
-and therefore should not reference code details.
+`notes/notes.tex` is the source of truth for the derivations the code implements — read
+it (or the compiled PDF) before changing any analytic formula. The notes are intended to
+stand alone, and therefore should not reference code details.
 
 ## Tooling
 
@@ -37,7 +43,8 @@ The main branch is protected. Workflow for feature development:
 3. If the change affects the formulation in `notes/notes.tex`, update the notes first,
    commit and push the notes changes, and ask for user review before implementing any
    code change. Otherwise, implement the code change directly and seek review on the code.
-4. Format, lint, and typecheck after making code changes (`pixi run fmt lint typecheck`).
+4. Format, lint, and typecheck after making code changes (`pixi run fmt`, `pixi run lint`,
+   `pixi run typecheck`).
 5. For changes to the library, validate by running the relevant `pixi run res{N}` script(s)
    and checking that analytic/simulation overlays still agree. Run additional ad-hoc
    checks as needed.

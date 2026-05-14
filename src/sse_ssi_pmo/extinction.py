@@ -701,13 +701,18 @@ def _pmo_ensemble_mcmc(
     show_progress: bool = False,
     **mcmc_kwargs,
 ) -> dict[str, NDArray[np.float64]]:
-    """Ensemble PMO for one history, MCMC for SSI specs (any history).
+    """Ensemble PMO for one history, MCMC for SSI specs and Prior-bearing SSE specs.
 
-    SSE and Poisson specs stay closed-form. Each SSI spec runs ``fit_ssi``
-    once and reuses the trace for both the PMO and the model evidence,
-    mirroring :func:`_pmo_uncertain_mcmc`.
+    Scalar-parameter SSE and Poisson specs stay closed-form. Each SSI
+    spec runs ``fit_ssi`` once and reuses the trace for both the PMO and
+    the model evidence, mirroring :func:`_pmo_uncertain_mcmc`. An SSE
+    spec carrying a :class:`~sse_ssi_pmo.priors.Prior` on ``R0`` and/or
+    ``k`` runs ``fit_sse`` once and averages the closed-form
+    :func:`_pmo_sse_analytic` over the trace via :func:`_pmo_sse_mcmc`,
+    while the evidence comes from :func:`_log_evidence_sse_mcmc`. SSI
+    specs likewise accept Priors and forward them through ``fit_ssi``.
     """
-    from sse_ssi_pmo.inference import fit_ssi
+    from sse_ssi_pmo.inference import fit_sse, fit_ssi
 
     thin = mcmc_kwargs.pop("thin", 1)
     mcmc_kwargs.setdefault("progressbar", show_progress)
@@ -718,18 +723,48 @@ def _pmo_ensemble_mcmc(
     for i, spec in enumerate(models):
         kind = spec["model"]
         if kind == "sse":
-            pmo_arr[i] = float(
-                np.asarray(_pmo_sse_analytic(spec["R0"], spec["k"], w, history)).reshape(())
-            )
-            log_L_arr[i] = float(
-                np.asarray(_log_evidence_sse_general(spec["R0"], spec["k"], w, history)).reshape(
-                    ()
+            R0_i = spec["R0"]
+            k_i = spec["k"]
+            if isinstance(R0_i, Prior) or isinstance(k_i, Prior):
+                datatree = fit_sse(
+                    history,
+                    w,
+                    R0=_fixed_or_none(R0_i),
+                    k=_fixed_or_none(k_i),
+                    priors=_fit_priors_from_prior_args(R0_i, k_i),
+                    thin=thin,
+                    **mcmc_kwargs,
                 )
-            )
+                pmo_arr[i] = _pmo_sse_mcmc(R0_i, k_i, w, history, datatree=datatree)
+                log_L_arr[i] = _log_evidence_sse_mcmc(
+                    R0_i,
+                    k_i,
+                    w,
+                    history,
+                    evidence_method=evidence_method,
+                    datatree=datatree,
+                    rng=rng,
+                    n_samples=n_evidence_samples,
+                )
+            else:
+                pmo_arr[i] = float(
+                    np.asarray(_pmo_sse_analytic(R0_i, k_i, w, history)).reshape(())
+                )
+                log_L_arr[i] = float(
+                    np.asarray(_log_evidence_sse_general(R0_i, k_i, w, history)).reshape(())
+                )
         elif kind == "ssi":
-            R0_i = float(spec["R0"])
-            k_i = float(spec["k"])
-            datatree = fit_ssi(history, w, R0=R0_i, k=k_i, thin=thin, **mcmc_kwargs)
+            R0_i = spec["R0"]
+            k_i = spec["k"]
+            datatree = fit_ssi(
+                history,
+                w,
+                R0=_fixed_or_none(R0_i),
+                k=_fixed_or_none(k_i),
+                priors=_fit_priors_from_prior_args(R0_i, k_i),
+                thin=thin,
+                **mcmc_kwargs,
+            )
             pmo_arr[i] = _pmo_ssi_mcmc_from_trace(R0_i, k_i, w, history, datatree)
             log_L_arr[i] = _log_evidence_ssi_mcmc(
                 R0_i,

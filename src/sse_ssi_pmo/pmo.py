@@ -36,8 +36,11 @@ of ``R0`` and ``k`` may instead be a :class:`~sse_ssi_pmo.priors.Prior`
 MCMC (``method='mcmc'``) or rejection sampling (``method='simulation'``).
 ``method='analytic'`` rejects Priors. When a Prior is passed, the
 broadcast over the other parameter is bypassed: the other parameter must
-be scalar. :func:`pmo_poisson` and :func:`pmo_ensemble` are scalar-only
-in their current form.
+be scalar. :func:`pmo_ensemble` accepts a Prior on the ``R0`` / ``k``
+slot of any SSE or SSI spec (Poisson + Prior is not yet implemented);
+under ``method='mcmc'`` the corresponding spec is fitted via
+``fit_sse`` / ``fit_ssi`` and the trace drives both the PMO and the
+log model evidence. :func:`pmo_poisson` is scalar-only.
 
 ``history`` may also be a 2-D ``(M, L)`` array (or list/tuple of
 equal-length 1-D arrays). The return then gains a *leading* length-``M``
@@ -154,8 +157,11 @@ _ENSEMBLE_REQUIRED_KEYS: dict[str, frozenset[str]] = {
 def _validate_model_specs(models: list[dict]) -> None:
     """Validate each ``models[i]`` is a well-formed model spec dict.
 
-    See :func:`pmo_ensemble` for the accepted shapes. Raises ``ValueError``
-    on any irregularity.
+    See :func:`pmo_ensemble` for the accepted shapes. SSE / SSI specs may
+    carry a :class:`~sse_ssi_pmo.priors.Prior` on ``R0`` and/or ``k``;
+    Poisson specs currently require a scalar ``R0`` (Prior on Poisson R0
+    is not yet implemented). Raises ``ValueError`` on any irregularity
+    and ``NotImplementedError`` on a Prior in a Poisson spec.
     """
     if not isinstance(models, list) or len(models) == 0:
         raise ValueError("models must be a non-empty list of dicts")
@@ -177,6 +183,21 @@ def _validate_model_specs(models: list[dict]) -> None:
             raise ValueError(f"models[{i}] (model={kind!r}) missing keys: {sorted(missing)}")
         if extra:
             raise ValueError(f"models[{i}] (model={kind!r}) has unexpected keys: {sorted(extra)}")
+        if kind == "poisson" and isinstance(spec["R0"], Prior):
+            raise NotImplementedError(
+                f"models[{i}] (model='poisson') carries a Prior on R0; "
+                "Poisson + Prior is not yet implemented (see pmo_ensemble docstring)."
+            )
+
+
+def _spec_has_prior(spec: dict) -> bool:
+    """Return ``True`` iff any of the spec's parameter values is a :class:`Prior`."""
+    return any(isinstance(spec.get(key), Prior) for key in ("R0", "k"))
+
+
+def _models_have_prior(models: list[dict]) -> bool:
+    """Return ``True`` iff any model spec in ``models`` carries a Prior."""
+    return any(_spec_has_prior(spec) for spec in models)
 
 
 def _validate_priors(priors: ArrayLike, n_models: int) -> NDArray[np.float64]:
@@ -767,36 +788,42 @@ def pmo_ensemble(
 
     Generalises :func:`pmo_uncertain` to an arbitrary list of model specs
     and prior probabilities. Each ``models[i]`` is a dict identifying one
-    candidate offspring model and carrying its own scalar parameters
-    (``R0``, plus ``k`` for SSE/SSI):
+    candidate offspring model and carrying its own parameters (``R0``,
+    plus ``k`` for SSE/SSI):
 
-    - ``{"model": "sse", "R0": float, "k": float}``
-    - ``{"model": "ssi", "R0": float, "k": float}``
+    - ``{"model": "sse", "R0": float | Prior, "k": float | Prior}``
+    - ``{"model": "ssi", "R0": float | Prior, "k": float | Prior}``
     - ``{"model": "poisson", "R0": float}``
 
     ``priors[i]`` is the prior probability assigned to ``models[i]``;
     ``priors`` must be a 1-D non-negative array of length ``len(models)``
     summing to 1.
 
-    The ``R0`` / ``k`` slots currently accept scalars only;
-    :class:`~sse_ssi_pmo.priors.Prior` instances are not yet supported in
-    this dispatcher and would have to be added per spec — see
-    :func:`pmo_uncertain` for the Prior-aware two-model API.
+    SSE / SSI specs may carry a :class:`~sse_ssi_pmo.priors.Prior` on
+    ``R0`` and/or ``k``, in which case the per-spec evidence and PMO are
+    integrated over the prior via MCMC under ``method='mcmc'``. Poisson
+    specs currently require a scalar ``R0``; a Prior on a Poisson spec
+    raises :class:`NotImplementedError` (the corresponding evidence
+    estimator has not yet been added — see ``notes/notes.tex``
+    §\\ref{sec:param_uncertain} for the general theory).
 
     Parameters
     ----------
     method
         ``"analytic"`` for closed-form per-model PMOs and evidences.
         SSI specs require a history with cases on day 0 and at most two
-        later days; otherwise raises :class:`NotImplementedError`.
+        later days; otherwise raises :class:`NotImplementedError`. Specs
+        carrying a Prior are rejected (raises :class:`ValueError`).
         ``"mcmc"`` runs ``fit_ssi`` once per SSI spec per history and
         reuses the trace for both the PMO and the log model evidence
-        (SSE and Poisson remain closed-form). ``"simulation"`` raises
-        :class:`NotImplementedError`.
+        (SSE and Poisson remain closed-form at fixed parameters; an SSE
+        spec carrying a Prior is fitted via ``fit_sse``). ``"simulation"``
+        raises :class:`NotImplementedError`.
     evidence_method
-        Estimator used for the SSI log model evidence under
-        ``method='mcmc'``: ``"bridge"`` (default), ``"importance_sampling"``,
-        or ``"naive"``. Ignored when ``method='analytic'``.
+        Estimator used for the log model evidence under ``method='mcmc'``:
+        ``"bridge"`` (default), ``"importance_sampling"``, or ``"naive"``.
+        Applies to any SSI spec and to any SSE spec that carries a Prior.
+        Ignored when ``method='analytic'``.
     **kwargs
         Forwarded to the MCMC backends as needed (``rng``,
         ``n_evidence_samples``, ``pm.sample`` kwargs such as ``draws``,
@@ -805,6 +832,7 @@ def pmo_ensemble(
     """
     _validate_model_specs(models)
     priors_arr = _validate_priors(priors, len(models))
+    has_prior = _models_have_prior(models)
 
     w_arr = np.asarray(w, dtype=np.float64)
     hist_2d, was_1d = _validate_histories(history)
@@ -816,6 +844,11 @@ def pmo_ensemble(
     pmo_per_model_out = np.empty((M, N), dtype=np.float64)
 
     if method == "analytic":
+        if has_prior:
+            raise ValueError(
+                "pmo_ensemble(method='analytic') does not accept Priors on R0/k; "
+                "use method='mcmc'."
+            )
         if kwargs:
             raise TypeError(
                 f"pmo_ensemble(method='analytic') got unexpected keyword arguments: "

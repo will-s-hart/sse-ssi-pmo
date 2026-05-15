@@ -9,9 +9,8 @@ with six bars per panel:
 * Model-averaged ``pmo_ensemble`` with equal priors (1/5 each)
 
 Loads pre-computed results from results/fig7_pmo_ensemble_error.csv (run
-``results_7_pmo_ensemble_error.py`` first). Set ``USE_PERCENT_ERROR =
-True`` to switch both metrics to percentages (sims with ``pmo_true ==
-0`` are dropped from the percentage averages).
+``results_7_pmo_ensemble_error.py`` first). Set ``USE_RMSE = False`` to
+switch the top row from RMS error to mean absolute error.
 """
 
 from __future__ import annotations
@@ -38,7 +37,7 @@ R0: float = DEFAULT_R0
 K: float = DEFAULT_K
 K_LARGE: float = FIG7_K_LARGE
 HISTORY_LENGTHS: list[int] = FIG7_HISTORY_LENGTHS
-USE_PERCENT_ERROR: bool = False
+USE_RMSE: bool = True
 
 # Reuse fig6's ensemble colour for the model-averaged bar.
 ENSEMBLE_COLOUR = "#009E73"
@@ -62,12 +61,11 @@ BAR_KEYS: list[tuple[str, str, str]] = [
 
 def _aggregate(panel: pd.DataFrame, est_col: str, *, signed: bool) -> float:
     err = panel[est_col] - panel["pmo_true"]
-    if not signed:
-        err = err.abs()
-    if USE_PERCENT_ERROR:
-        mask = panel["pmo_true"] > 0
-        return float((err[mask] / panel["pmo_true"][mask]).mean() * 100.0)
-    return float(err.mean())
+    if signed:
+        return float(err.mean())
+    if USE_RMSE:
+        return float(np.sqrt((err**2).mean()))
+    return float(err.abs().mean())
 
 
 def main() -> None:
@@ -85,10 +83,8 @@ def main() -> None:
         squeeze=False,
     )
 
-    if USE_PERCENT_ERROR:
-        ylabels = ("Mean absolute % error in PMO", "Mean signed % error in PMO")
-    else:
-        ylabels = ("Mean absolute error in PMO", "Mean signed error in PMO")
+    top = "RMS error in PMO" if USE_RMSE else "Mean absolute error in PMO"
+    ylabels = (top, "Mean signed error in PMO")
 
     labels = [lbl for _, lbl, _ in BAR_KEYS]
     colours = [col for _, _, col in BAR_KEYS]

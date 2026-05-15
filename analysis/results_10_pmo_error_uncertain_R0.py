@@ -10,8 +10,10 @@ Gamma prior (``k`` fixed). For each panel (history length L in
   ``L`` weeks under the true ``(R0, model)``.
 * Computes the simulation-based PMO under SSE, under SSI, and via
   Bayesian model averaging (``pmo_uncertain``), all with ``R0`` set to
-  the Gamma prior. The "true" PMO is the analytic value at the per-sim
-  scalar ``true_R0`` under the model that generated the history.
+  the Gamma prior. The "true" PMO is at the per-sim scalar ``true_R0``
+  under the model that generated the history — analytic where the
+  closed-form applies (always for SSE; SSI for non-"general" histories),
+  per-row simulation at the scalar ``true_R0`` otherwise.
 
 Setting ``USE_MCMC = True`` additionally computes ``pmo_*_mcmc`` for
 every unique history per panel (one PyMC fit per estimator per unique
@@ -61,6 +63,7 @@ from sse_ssi_pmo import (
     simulate_sse,
     simulate_ssi,
 )
+from sse_ssi_pmo._history import classify_history
 
 # When True, also compute pmo_*_mcmc per unique history and add the
 # matching columns to the CSV. One PyMC fit per estimator per unique
@@ -236,12 +239,38 @@ def _mcmc_pmos_for_panel(
     return cache
 
 
-def _pmo_true(true_model: str, R0_true: float, w: np.ndarray, hist: np.ndarray) -> float:
-    """Analytic PMO at the per-sim scalar ``R0_true`` under the true model."""
+def _pmo_true(
+    true_model: str,
+    R0_true: float,
+    w: np.ndarray,
+    hist: np.ndarray,
+    rng: np.random.Generator,
+) -> float:
+    """PMO at the per-sim scalar ``R0_true`` under the true model.
+
+    SSE: always analytic (closed-form covers every history shape).
+    SSI: analytic for the three special history shapes, else simulation at
+    the row's scalar ``R0_true`` so the residual against the panel-level
+    estimators (R0-prior-integrated) still measures combined R0-uncertainty
+    + model-misspecification cost — same baseline as the L=2/3 rows.
+    """
     if true_model == "sse":
-        val = pmo_sse(R0=R0_true, k=K, w=w, history=hist, method="analytic")
-    else:
-        val = pmo_ssi(R0=R0_true, k=K, w=w, history=hist, method="analytic")
+        return float(np.asarray(pmo_sse(R0=R0_true, k=K, w=w, history=hist, method="analytic")))
+    if classify_history(hist)["kind"] != "general":
+        return float(np.asarray(pmo_ssi(R0=R0_true, k=K, w=w, history=hist, method="analytic")))
+    val = pmo_ssi(
+        R0=R0_true,
+        k=K,
+        w=w,
+        history=hist,
+        method="simulation",
+        n_sims=FIG10_SIM_N,
+        threshold=SIM_THRESHOLD,
+        t_max=SIM_T_MAX,
+        rng=rng,
+        batch_size=FIG10_SIM_BATCH,
+        max_attempts=FIG10_SIM_MAX_ATTEMPTS,
+    )
     return float(np.asarray(val))
 
 
@@ -296,7 +325,7 @@ def main() -> None:
                 "true_model": true_model,
                 "true_R0": R0_true,
                 "history": " ".join(str(int(x)) for x in hist),
-                "pmo_true": _pmo_true(true_model, R0_true, w, hist),
+                "pmo_true": _pmo_true(true_model, R0_true, w, hist, rng),
                 **sim_cache[key],
             }
             if USE_MCMC:

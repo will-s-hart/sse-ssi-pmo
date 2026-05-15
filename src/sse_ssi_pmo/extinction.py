@@ -1,4 +1,4 @@
-"""Analytic extinction-probability (PMO) building blocks for the SSE and SSI models.
+"""Analytic extinction-probability (PMO) building blocks for the SSE, SSI, and Poisson models.
 
 For an offspring distribution :math:`\\mathrm{NB}(\\text{mean}=\\mu,\\text{disp}=\\kappa)`,
 branching-process theory says the extinction probability ``q`` is the smallest
@@ -10,23 +10,28 @@ non-negative fixed point of the pgf
 
 If ``mu <= 1`` the only fixed point in ``[0, 1]`` is ``q = 1``; otherwise the
 unique fixed point in ``(0, 1)`` is found by ``scipy.optimize.brentq`` on
-``f(q) = G(q) - q``.
+``f(q) = G(q) - q``. The Poisson case (the ``k -> infty`` limit) replaces
+``G`` with ``exp(mu(s - 1))``.
 
 After conditioning on an observed incidence history ``I_0, ..., I_r``, the
 extinction probability is ``q_r = G_r(q)`` where ``G_r`` is the pgf of the
 remaining offspring distribution of the observed cases. See ``notes/notes.tex``
-for the SSE and SSI derivations. The closed forms exposed here are:
+for the SSE, SSI, and Poisson derivations. The closed forms exposed here are:
 
 * SSE (general history): ``q_r = q ** Lambda`` with
-  ``Lambda = sum_{s=0..r} I_s * (1 - F_{r-s})``; the SSE marginal log-likelihood
-  used for Bayesian model averaging lives in :mod:`~sse_ssi_pmo.likelihood`.
+  ``Lambda = sum_{s=0..r} I_s * (1 - F_{r-s})``; the SSE log model evidence
+  used for Bayesian model averaging lives in :mod:`~sse_ssi_pmo.evidence`.
 * SSI: closed-form ``q_r`` for histories with cases on day 0 only, on day 0
   and one later day, or on day 0 and two later days
   (:func:`_pmo_ssi_analytic`); an MCMC-based estimator for general histories
   (:func:`_pmo_ssi_mcmc`).
+* Poisson (general history): ``q_r = q ** Lambda`` with ``q`` from the
+  Poisson pgf (:func:`_pmo_poisson_analytic`).
 * Bayesian model average across SSE and SSI: analytic
   (:func:`_pmo_uncertain_analytic`, restricted to the three closed-form SSI
   cases) and MCMC-based (:func:`_pmo_uncertain_mcmc`, any history).
+* N-model Bayesian model average across an arbitrary list of SSE / SSI /
+  Poisson specs (:func:`_pmo_ensemble_analytic`, :func:`_pmo_ensemble_mcmc`).
 
 The functions in this module are private helpers used by ``pmo.py``; they do
 not validate user-facing inputs (the dispatcher is responsible for that).
@@ -41,14 +46,19 @@ import xarray as xr
 from numpy.typing import ArrayLike, NDArray
 
 from sse_ssi_pmo._history import classify_history, w_at
-from sse_ssi_pmo.likelihood import (
-    SsiEvidenceMethod,
+from sse_ssi_pmo.evidence import (
+    EvidenceMethod,
+    _fit_priors_from_prior_args,
+    _fixed_or_none,
     _log_c_m_two_later_days,
-    _log_likelihood_poisson_general,
-    _log_likelihood_sse_general,
-    _log_likelihood_ssi_analytic,
-    _log_likelihood_ssi_mcmc,
+    _log_evidence_poisson_general,
+    _log_evidence_sse_general,
+    _log_evidence_sse_mcmc,
+    _log_evidence_ssi_analytic,
+    _log_evidence_ssi_mcmc,
+    _param_posterior_samples,
 )
+from sse_ssi_pmo.priors import Prior
 from sse_ssi_pmo.serial_interval import cumulative
 
 # Upper bracket for brentq: just below 1 so we don't trivially hit q = 1.
@@ -153,17 +163,47 @@ def _pmo_poisson_analytic(
     return 1.0 - q**Lambda
 
 
+def _param_per_draw(
+    x: float | Prior,
+    trace_name: str,
+    datatree: xr.DataTree,
+    n_draws: int,
+) -> NDArray[np.float64]:
+    """Per-draw values of ``x`` from the trace (if Prior) or broadcast scalar."""
+    if isinstance(x, Prior):
+        arr = _param_posterior_samples(datatree, trace_name)
+        if arr is None:
+            raise ValueError(
+                f"trace has no '{trace_name}' posterior; pass {trace_name} as a Prior "
+                "to fit_ssi/fit_sse"
+            )
+        return arr[:n_draws]
+    return np.full(n_draws, float(x), dtype=np.float64)
+
+
+def _q_per_draw(R0_draws: NDArray[np.float64], k_draws: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Per-draw extinction probability ``q_i`` via ``_nb_extinction_prob``."""
+    n = R0_draws.size
+    q = np.empty(n, dtype=np.float64)
+    for i in range(n):
+        q[i] = _nb_extinction_prob(float(R0_draws[i]), float(k_draws[i]))
+    return q
+
+
 def _pmo_ssi_mcmc_from_trace(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: NDArray[np.float64],
     history: NDArray[np.int64],
     datatree: xr.DataTree,
 ) -> float:
     """Core of the SSI MCMC PMO estimator, given a pre-existing ``fit_ssi`` trace.
 
-    Averages ``exp(R0 * Lambda * (q - 1))`` over the posterior draws, where
-    ``Lambda = sum_s Y_s * (1 - F_{r-s})``.
+    Averages ``exp(R0_i * Lambda_i * (q_i - 1))`` over the posterior draws,
+    where ``Lambda_i = sum_s Y_{s,i} * (1 - F_{r-s})``. With ``R0``/``k`` as
+    :class:`~sse_ssi_pmo.priors.Prior` instances each draw uses its own
+    ``R0_i``/``k_i`` read from the trace, and ``q_i`` is recomputed
+    per-draw; otherwise scalars are broadcast.
     """
     Y_nonzero_samples = datatree["posterior"].ds["infectivity"].values
     n_nonzero = Y_nonzero_samples.shape[-1]
@@ -180,14 +220,16 @@ def _pmo_ssi_mcmc_from_trace(
     weights = 1.0 - F[idx]
     Lambda_samples = Y_full @ weights
 
-    q = _nb_extinction_prob(R0, k)
-    q_r = float(np.mean(np.exp(R0 * Lambda_samples * (q - 1.0))))
+    R0_arr = _param_per_draw(R0, "rep_no", datatree, n_samples)
+    k_arr = _param_per_draw(k, "dispersion", datatree, n_samples)
+    q_arr = _q_per_draw(R0_arr, k_arr)
+    q_r = float(np.mean(np.exp(R0_arr * Lambda_samples * (q_arr - 1.0))))
     return 1.0 - q_r
 
 
 def _pmo_ssi_mcmc(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: NDArray[np.float64],
     history: NDArray[np.int64],
     *,
@@ -198,11 +240,12 @@ def _pmo_ssi_mcmc(
     """SSI PMO for a general history, estimated via MCMC over latent infectivities.
 
     Runs ``fit_ssi`` internally and averages the conditional extinction
-    probability over the posterior draws. ``mcmc_kwargs`` are forwarded to
-    ``pm.sample`` (e.g. ``draws``, ``tune``, ``chains``, ``thin``).
+    probability over the posterior draws. With ``R0``/``k`` as
+    :class:`~sse_ssi_pmo.priors.Prior` instances the trace also samples
+    those parameters; ``q`` is then recomputed per-draw.
 
     To share a single MCMC fit between ``_pmo_ssi_mcmc`` and
-    ``_log_likelihood_ssi_mcmc`` (which is the use case for
+    ``_log_evidence_ssi_mcmc`` (the case under
     ``pmo_uncertain(method='mcmc')``), pass a pre-existing trace via
     ``datatree``; in that case ``mcmc_kwargs`` is ignored.
     """
@@ -211,8 +254,65 @@ def _pmo_ssi_mcmc(
 
         thin = mcmc_kwargs.pop("thin", 1)
         mcmc_kwargs.setdefault("progressbar", show_progress)
-        datatree = fit_ssi(history, w, R0=R0, k=k, thin=thin, **mcmc_kwargs)
+        priors_kw = _fit_priors_from_prior_args(R0, k)
+        datatree = fit_ssi(
+            history,
+            w,
+            R0=_fixed_or_none(R0),
+            k=_fixed_or_none(k),
+            priors=priors_kw,
+            thin=thin,
+            **mcmc_kwargs,
+        )
     return _pmo_ssi_mcmc_from_trace(R0, k, w, history, datatree)
+
+
+def _pmo_sse_mcmc(
+    R0: float | Prior,
+    k: float | Prior,
+    w: NDArray[np.float64],
+    history: NDArray[np.int64],
+    *,
+    datatree: xr.DataTree | None = None,
+    show_progress: bool = False,
+    **mcmc_kwargs,
+) -> float:
+    """SSE PMO under priors on ``R0`` / ``k``, averaging the closed-form over (R0, k) draws.
+
+    At fixed ``(R0, k)`` the SSE PMO is closed-form (:func:`_pmo_sse_analytic`)
+    and this MCMC backend isn't needed. With priors we fit ``R0`` / ``k`` via
+    :func:`fit_sse` (or reuse a supplied ``datatree``) and average
+    :func:`_pmo_sse_analytic` over the draws.
+
+    Pass a pre-existing trace via ``datatree`` to share the fit (e.g. with a
+    figure script that also wants the posterior of ``R0`` for plotting); in
+    that case ``mcmc_kwargs`` is ignored.
+    """
+    if not isinstance(R0, Prior) and not isinstance(k, Prior):
+        # No latents to average over — closed form is the answer.
+        return float(_pmo_sse_analytic(R0, k, w, history))
+    if datatree is None:
+        from sse_ssi_pmo.inference import fit_sse
+
+        thin = mcmc_kwargs.pop("thin", 1)
+        mcmc_kwargs.setdefault("progressbar", show_progress)
+        priors_kw = _fit_priors_from_prior_args(R0, k)
+        datatree = fit_sse(
+            history,
+            w,
+            R0=_fixed_or_none(R0),
+            k=_fixed_or_none(k),
+            priors=priors_kw,
+            thin=thin,
+            **mcmc_kwargs,
+        )
+    n_draws = int(datatree["posterior"].ds.sizes["chain"]) * int(
+        datatree["posterior"].ds.sizes["draw"]
+    )
+    R0_arr = _param_per_draw(R0, "rep_no", datatree, n_draws)
+    k_arr = _param_per_draw(k, "dispersion", datatree, n_draws)
+    pmo_per_draw = _pmo_sse_analytic(R0_arr, k_arr, w, history)
+    return float(np.mean(np.asarray(pmo_per_draw, dtype=np.float64)))
 
 
 def _beta(
@@ -273,7 +373,7 @@ def _pmo_ssi_analytic_two_later(
 
     ``q_r = beta_j^{-k I_j} * sum_m rho_m beta_0^{-(k I_0 + I_i + I_j - m)}
     beta_i^{-(k I_i + m)}`` with ``rho_m = c_m / sum_{m'} c_{m'}``; see
-    :func:`sse_ssi_pmo.likelihood._log_c_m_two_later_days` and ``notes/notes.tex``.
+    :func:`sse_ssi_pmo.evidence._log_c_m_two_later_days` and ``notes/notes.tex``.
     """
     q, R0_b, k_b = _q_array(R0, k)
     beta_0 = _beta(R0_b, k_b, q, F_r)
@@ -350,7 +450,7 @@ def _bayes_model_average(
     log_L_ssi: NDArray[np.float64],
     prior_sse: float,
 ) -> dict[str, NDArray[np.float64]]:
-    """Combine per-model PMOs and log-likelihoods via Bayes' theorem.
+    """Combine per-model PMOs and log model evidences via Bayes' theorem.
 
     Shared between :func:`_pmo_uncertain_analytic` and
     :func:`_pmo_uncertain_mcmc` — the only difference between them is how
@@ -383,9 +483,9 @@ def _pmo_uncertain_analytic(
     """Model-averaged PMO for histories with cases on day 0 and at most two later days.
 
     Combines the per-model PMOs (:func:`_pmo_sse_analytic` /
-    :func:`_pmo_ssi_analytic`) with the per-model log-likelihoods
-    (:func:`~sse_ssi_pmo.likelihood._log_likelihood_sse_general` /
-    :func:`~sse_ssi_pmo.likelihood._log_likelihood_ssi_analytic`) via Bayes'
+    :func:`_pmo_ssi_analytic`) with the per-model log model evidences
+    (:func:`~sse_ssi_pmo.evidence._log_evidence_sse_general` /
+    :func:`~sse_ssi_pmo.evidence._log_evidence_ssi_analytic`) via Bayes'
     theorem. Returns a dict with keys ``pmo``, ``posterior_sse``, ``pmo_sse``,
     ``pmo_ssi``; each value broadcasts over ``(R0, k)``. Raises ``ValueError``
     if ``history`` has three or more later non-zero days.
@@ -395,59 +495,105 @@ def _pmo_uncertain_analytic(
 
     pmo_sse_arr = _pmo_sse_analytic(R0, k, w, history)
     pmo_ssi_arr = _pmo_ssi_analytic(R0, k, w, history)
-    log_L_sse = _log_likelihood_sse_general(R0, k, w, history)
-    log_L_ssi = _log_likelihood_ssi_analytic(R0, k, w, history)
+    log_L_sse = _log_evidence_sse_general(R0, k, w, history)
+    log_L_ssi = _log_evidence_ssi_analytic(R0, k, w, history)
     return _bayes_model_average(pmo_sse_arr, pmo_ssi_arr, log_L_sse, log_L_ssi, prior_sse)
 
 
 def _pmo_uncertain_mcmc(
-    R0: float,
-    k: float,
+    R0: float | Prior,
+    k: float | Prior,
     w: NDArray[np.float64],
     history: NDArray[np.int64],
     prior_sse: float,
     *,
-    ssi_evidence_method: SsiEvidenceMethod = "bridge",
+    evidence_method: EvidenceMethod = "bridge",
     rng: np.random.Generator | None = None,
     n_evidence_samples: int | None = None,
+    datatree_sse: xr.DataTree | None = None,
+    datatree_ssi: xr.DataTree | None = None,
     show_progress: bool = False,
     **mcmc_kwargs,
 ) -> dict[str, float]:
-    """Model-averaged PMO for any history, using MCMC for the SSI side.
+    """Model-averaged PMO for any history, using MCMC for the SSI side and (under
+    priors) the SSE side as well.
 
-    Runs ``fit_ssi`` once, then reuses the trace for both the SSI PMO
-    (:func:`_pmo_ssi_mcmc_from_trace`) and the SSI marginal log-likelihood
-    (:func:`~sse_ssi_pmo.likelihood._log_likelihood_ssi_mcmc`). The SSE side
-    stays closed-form throughout.
+    With fixed ``(R0, k)``: runs ``fit_ssi`` once and reuses the trace for
+    both the SSI PMO and the SSI log model evidence; the SSE side stays
+    closed-form. With ``R0``/``k`` as :class:`~sse_ssi_pmo.priors.Prior`
+    instances: additionally runs ``fit_sse`` and uses
+    :func:`~sse_ssi_pmo.evidence._log_evidence_sse_mcmc` for the SSE
+    evidence; both PMOs are averaged over their respective traces.
+
+    Pass pre-fitted ``datatree_sse`` / ``datatree_ssi`` to skip the inner
+    ``fit_*`` calls; either may be supplied independently.
 
     Returns the same dict shape as :func:`_pmo_uncertain_analytic`:
-    ``{pmo, posterior_sse, pmo_sse, pmo_ssi}``, each a scalar (this function
-    is called once per ``(R0, k)`` by the dispatcher).
+    ``{pmo, posterior_sse, pmo_sse, pmo_ssi}``, each a scalar.
     """
     if not 0.0 <= prior_sse <= 1.0:
         raise ValueError("prior_sse must lie in [0, 1]")
+
+    param_uncertain = isinstance(R0, Prior) or isinstance(k, Prior)
 
     from sse_ssi_pmo.inference import fit_ssi
 
     thin = mcmc_kwargs.pop("thin", 1)
     mcmc_kwargs.setdefault("progressbar", show_progress)
 
-    # Naive MC doesn't use the trace, but we still need it for the SSI PMO.
-    datatree = fit_ssi(history, w, R0=R0, k=k, thin=thin, **mcmc_kwargs)
+    if datatree_ssi is None:
+        priors_kw = _fit_priors_from_prior_args(R0, k)
+        datatree_ssi = fit_ssi(
+            history,
+            w,
+            R0=_fixed_or_none(R0),
+            k=_fixed_or_none(k),
+            priors=priors_kw,
+            thin=thin,
+            **mcmc_kwargs,
+        )
 
-    pmo_sse = float(_pmo_sse_analytic(R0, k, w, history))
-    pmo_ssi = _pmo_ssi_mcmc_from_trace(R0, k, w, history, datatree)
-    log_L_sse = float(_log_likelihood_sse_general(R0, k, w, history))
-    log_L_ssi = _log_likelihood_ssi_mcmc(
+    pmo_ssi = _pmo_ssi_mcmc_from_trace(R0, k, w, history, datatree_ssi)
+    log_L_ssi = _log_evidence_ssi_mcmc(
         R0,
         k,
         w,
         history,
-        ssi_evidence_method=ssi_evidence_method,
-        datatree=datatree,
+        evidence_method=evidence_method,
+        datatree=datatree_ssi,
         rng=rng,
         n_samples=n_evidence_samples,
     )
+
+    if param_uncertain:
+        if datatree_sse is None:
+            from sse_ssi_pmo.inference import fit_sse
+
+            priors_kw = _fit_priors_from_prior_args(R0, k)
+            datatree_sse = fit_sse(
+                history,
+                w,
+                R0=_fixed_or_none(R0),
+                k=_fixed_or_none(k),
+                priors=priors_kw,
+                thin=thin,
+                **mcmc_kwargs,
+            )
+        pmo_sse = _pmo_sse_mcmc(R0, k, w, history, datatree=datatree_sse)
+        log_L_sse = _log_evidence_sse_mcmc(
+            R0,
+            k,
+            w,
+            history,
+            evidence_method=evidence_method,
+            datatree=datatree_sse,
+            rng=rng,
+            n_samples=n_evidence_samples,
+        )
+    else:
+        # Fixed-parameter fast paths.
+        pmo_sse = float(_pmo_sse_analytic(R0, k, w, history))
+        log_L_sse = float(_log_evidence_sse_general(R0, k, w, history))
 
     result = _bayes_model_average(
         np.asarray(pmo_sse),
@@ -502,20 +648,18 @@ def _pmo_per_spec_analytic(
     if kind == "sse":
         pmo = float(np.asarray(_pmo_sse_analytic(spec["R0"], spec["k"], w, history)).reshape(()))
         log_L = float(
-            np.asarray(_log_likelihood_sse_general(spec["R0"], spec["k"], w, history)).reshape(())
+            np.asarray(_log_evidence_sse_general(spec["R0"], spec["k"], w, history)).reshape(())
         )
         return pmo, log_L
     if kind == "ssi":
         pmo = float(np.asarray(_pmo_ssi_analytic(spec["R0"], spec["k"], w, history)).reshape(()))
         log_L = float(
-            np.asarray(_log_likelihood_ssi_analytic(spec["R0"], spec["k"], w, history)).reshape(())
+            np.asarray(_log_evidence_ssi_analytic(spec["R0"], spec["k"], w, history)).reshape(())
         )
         return pmo, log_L
     if kind == "poisson":
         pmo = float(np.asarray(_pmo_poisson_analytic(spec["R0"], w, history)).reshape(()))
-        log_L = float(
-            np.asarray(_log_likelihood_poisson_general(spec["R0"], w, history)).reshape(())
-        )
+        log_L = float(np.asarray(_log_evidence_poisson_general(spec["R0"], w, history)).reshape(()))
         return pmo, log_L
     raise ValueError(f"unknown model kind {kind!r}; expected 'sse', 'ssi', or 'poisson'")
 
@@ -547,19 +691,24 @@ def _pmo_ensemble_mcmc(
     w: NDArray[np.float64],
     history: NDArray[np.int64],
     *,
-    ssi_evidence_method: SsiEvidenceMethod = "bridge",
+    evidence_method: EvidenceMethod = "bridge",
     rng: np.random.Generator | None = None,
     n_evidence_samples: int | None = None,
     show_progress: bool = False,
     **mcmc_kwargs,
 ) -> dict[str, NDArray[np.float64]]:
-    """Ensemble PMO for one history, MCMC for SSI specs (any history).
+    """Ensemble PMO for one history, MCMC for SSI specs and Prior-bearing SSE specs.
 
-    SSE and Poisson specs stay closed-form. Each SSI spec runs ``fit_ssi``
-    once and reuses the trace for both the PMO and the marginal log-
-    likelihood, mirroring :func:`_pmo_uncertain_mcmc`.
+    Scalar-parameter SSE and Poisson specs stay closed-form. Each SSI
+    spec runs ``fit_ssi`` once and reuses the trace for both the PMO and
+    the model evidence, mirroring :func:`_pmo_uncertain_mcmc`. An SSE
+    spec carrying a :class:`~sse_ssi_pmo.priors.Prior` on ``R0`` and/or
+    ``k`` runs ``fit_sse`` once and averages the closed-form
+    :func:`_pmo_sse_analytic` over the trace via :func:`_pmo_sse_mcmc`,
+    while the evidence comes from :func:`_log_evidence_sse_mcmc`. SSI
+    specs likewise accept Priors and forward them through ``fit_ssi``.
     """
-    from sse_ssi_pmo.inference import fit_ssi
+    from sse_ssi_pmo.inference import fit_sse, fit_ssi
 
     thin = mcmc_kwargs.pop("thin", 1)
     mcmc_kwargs.setdefault("progressbar", show_progress)
@@ -570,25 +719,53 @@ def _pmo_ensemble_mcmc(
     for i, spec in enumerate(models):
         kind = spec["model"]
         if kind == "sse":
-            pmo_arr[i] = float(
-                np.asarray(_pmo_sse_analytic(spec["R0"], spec["k"], w, history)).reshape(())
-            )
-            log_L_arr[i] = float(
-                np.asarray(_log_likelihood_sse_general(spec["R0"], spec["k"], w, history)).reshape(
-                    ()
+            R0_i = spec["R0"]
+            k_i = spec["k"]
+            if isinstance(R0_i, Prior) or isinstance(k_i, Prior):
+                datatree = fit_sse(
+                    history,
+                    w,
+                    R0=_fixed_or_none(R0_i),
+                    k=_fixed_or_none(k_i),
+                    priors=_fit_priors_from_prior_args(R0_i, k_i),
+                    thin=thin,
+                    **mcmc_kwargs,
                 )
-            )
+                pmo_arr[i] = _pmo_sse_mcmc(R0_i, k_i, w, history, datatree=datatree)
+                log_L_arr[i] = _log_evidence_sse_mcmc(
+                    R0_i,
+                    k_i,
+                    w,
+                    history,
+                    evidence_method=evidence_method,
+                    datatree=datatree,
+                    rng=rng,
+                    n_samples=n_evidence_samples,
+                )
+            else:
+                pmo_arr[i] = float(np.asarray(_pmo_sse_analytic(R0_i, k_i, w, history)).reshape(()))
+                log_L_arr[i] = float(
+                    np.asarray(_log_evidence_sse_general(R0_i, k_i, w, history)).reshape(())
+                )
         elif kind == "ssi":
-            R0_i = float(spec["R0"])
-            k_i = float(spec["k"])
-            datatree = fit_ssi(history, w, R0=R0_i, k=k_i, thin=thin, **mcmc_kwargs)
+            R0_i = spec["R0"]
+            k_i = spec["k"]
+            datatree = fit_ssi(
+                history,
+                w,
+                R0=_fixed_or_none(R0_i),
+                k=_fixed_or_none(k_i),
+                priors=_fit_priors_from_prior_args(R0_i, k_i),
+                thin=thin,
+                **mcmc_kwargs,
+            )
             pmo_arr[i] = _pmo_ssi_mcmc_from_trace(R0_i, k_i, w, history, datatree)
-            log_L_arr[i] = _log_likelihood_ssi_mcmc(
+            log_L_arr[i] = _log_evidence_ssi_mcmc(
                 R0_i,
                 k_i,
                 w,
                 history,
-                ssi_evidence_method=ssi_evidence_method,
+                evidence_method=evidence_method,
                 datatree=datatree,
                 rng=rng,
                 n_samples=n_evidence_samples,
@@ -598,7 +775,7 @@ def _pmo_ensemble_mcmc(
                 np.asarray(_pmo_poisson_analytic(spec["R0"], w, history)).reshape(())
             )
             log_L_arr[i] = float(
-                np.asarray(_log_likelihood_poisson_general(spec["R0"], w, history)).reshape(())
+                np.asarray(_log_evidence_poisson_general(spec["R0"], w, history)).reshape(())
             )
         else:
             raise ValueError(f"unknown model kind {kind!r}; expected 'sse', 'ssi', or 'poisson'")

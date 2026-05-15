@@ -16,6 +16,10 @@ See ``notes/notes.tex`` for the mathematical derivation. This package exposes:
   of model specs (SSE / SSI / Poisson, each with its own scalar
   parameters) and prior probabilities; returns a
   :class:`PmoEnsembleResult`.
+* :class:`Prior` — Gamma / LogNormal prior on :math:`R_0` or :math:`k`,
+  accepted in place of a scalar by :func:`pmo_sse`, :func:`pmo_ssi`, and
+  :func:`pmo_uncertain` to trigger parameter-uncertainty handling via
+  MCMC or rejection sampling.
 * :func:`simulate_sse`, :func:`simulate_ssi`, :func:`simulate_poisson` —
   single forward trajectories.
 """
@@ -30,12 +34,14 @@ from sse_ssi_pmo.pmo import (
     pmo_ssi,
     pmo_uncertain,
 )
+from sse_ssi_pmo.priors import Prior
 from sse_ssi_pmo.serial_interval import cumulative, discretise, discretise_gamma
 from sse_ssi_pmo.simulation import simulate_poisson, simulate_sse, simulate_ssi
 
 __all__ = [
     "PmoEnsembleResult",
     "PmoUncertainResult",
+    "Prior",
     "cumulative",
     "discretise",
     "discretise_gamma",

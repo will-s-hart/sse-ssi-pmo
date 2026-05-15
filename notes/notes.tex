@@ -1052,4 +1052,185 @@ at the median of $\{\ell_q^{(i)}\}_i$, and iterate
 \eqref{eq:L_ssi_bridge_logspace} until $\log L^{(t)}$ stops changing
 appreciably.
 
+% ===========================================================================
+\section{Uncertainty in the parameters \(R_0\) and \(k\)}
+\label{sec:param_uncertain}
+% ===========================================================================
+
+The preceding sections have treated the offspring-distribution
+parameters as known.  In practice they are estimated from the data; we
+equip them with priors and ask for the resulting marginal model
+evidence and probability of a major outbreak.  Write \(\theta\) for the
+collection of parameters of model \(M\)
+(\(\theta = (R_0, k)\) for SSE and SSI, \(\theta = R_0\) for Poisson),
+and assume the prior factorises as a product of Gamma or LogNormal
+factors on the individual components; a fixed parameter corresponds to
+its prior factor being a point mass, which drops out of the integrals
+below without affecting the structure of any estimator.
+
+Conditional on \(\theta\), each model has a per-parameter evidence
+\(L_M(\theta) = \mathbb{P}_M(I_1, \ldots, I_r \mid I_0, \theta)\) and
+PMO \(\mathrm{PMO}_M(\theta) = 1 - q_r^M(\theta)\): the SSE evidence is
+the closed-form negative-binomial product \eqref{eq:L_sse_general}, the
+Poisson evidence is the closed-form Poisson product
+\eqref{eq:L_poisson_general}, and the SSI evidence is the latent
+integral \eqref{eq:L_ssi_integral}.  The per-parameter PMOs are the
+parameter-known quantities of \S\S~\ref{sec:qr_sse}--\ref{sec:qr_poisson}.
+
+\subsection{Marginal evidence and model-averaged PMO}
+
+Define the prior-marginal evidence
+\begin{equation}\label{eq:L_marginal}
+  \bar L_M \;=\; \int L_M(\theta)\, \pi(\theta)\, \mathrm{d}\theta,
+\end{equation}
+and the corresponding marginal probability of a major outbreak,
+\begin{equation}\label{eq:pmo_marginal}
+  \overline{\mathrm{PMO}}_M
+  \;=\; \int \mathrm{PMO}_M(\theta)\,
+        p(\theta \mid I_{1:r}, M)\, \mathrm{d}\theta
+  \;=\; \frac{1}{\bar L_M}
+        \int \mathrm{PMO}_M(\theta)\, L_M(\theta)\, \pi(\theta)\,
+              \mathrm{d}\theta,
+\end{equation}
+the posterior expectation of \(\mathrm{PMO}_M(\theta)\) under the
+parameter posterior of model \(M\).  In the limit of a degenerate
+prior at \(\theta_0\), \eqref{eq:L_marginal} reduces to
+\(L_M(\theta_0)\) and \eqref{eq:pmo_marginal} reduces to
+\(\mathrm{PMO}_M(\theta_0)\), recovering the parameter-known
+quantities of the preceding sections.
+
+The Bayesian model-averaging formulae \eqref{eq:pi_post_general} and
+\eqref{eq:pmo_avg_general} of \S~\ref{sec:pmo_uncertain} carry over
+unchanged with \(\bar L_M\) and \(\overline{\mathrm{PMO}}_M\) in place
+of their parameter-known counterparts: the posterior model
+probabilities are \(\pi_M^\star \propto \pi_M\, \bar L_M\) and the
+model-averaged probability of a major outbreak is
+\(\overline{\mathrm{PMO}}_\mathrm{avg}
+  = \sum_{M \in \mathcal{M}} \pi_M^\star\,
+    \overline{\mathrm{PMO}}_M\).  The two-model SSE/SSI case of
+\eqref{eq:pmo_avg_two_model} is the worked specialisation.
+
+\subsection{Estimators on the augmented latent vector}
+\label{sec:param_uncertain_estimators}
+
+The three estimators of \S~\ref{sec:mcmc_evidence} carry over to
+\eqref{eq:L_marginal} after augmenting the latent vector with the
+uncertain parameters.  Write
+\(\theta = (\theta_{\mathrm u}, \theta_{\mathrm f})\) where
+\(\theta_{\mathrm u}\) collects the components of \(\theta\) carrying a
+non-degenerate prior factor and \(\theta_{\mathrm f}\) collects the
+remaining (fixed) components.  The augmented latent vector is
+\begin{equation*}
+  z \;=\; (\theta_{\mathrm u},\, Y_{\mathcal T}),
+\end{equation*}
+where \(Y_{\mathcal T}\) is the SSI latent infectivities on the active
+days \(\mathcal T = \{t \in \{0,\dots,r-1\} : I_t > 0\}\); for the SSE
+and Poisson models this block is empty and \(z = \theta_{\mathrm u}\).
+The unnormalised target on \(z\) is
+\begin{equation}\label{eq:augmented_target}
+  \tilde p(z)
+  \;=\;
+  \mathcal L\!\bigl(z;\, \theta_{\mathrm f}\bigr)\,
+  \pi_Y\!\bigl(Y_{\mathcal T} \mid k\bigr)\,
+  \pi(\theta_{\mathrm u}),
+\end{equation}
+where
+\(\mathcal L(z; \theta_{\mathrm f}) =
+   p(I_{1:r} \mid z, \theta_{\mathrm f})\) is the observation
+likelihood — the SSE NB product \eqref{eq:L_sse_general} for SSE, the
+Poisson product \eqref{eq:L_poisson_general} for Poisson, and the
+latent-conditional Poisson product
+\(\prod_{t=1}^r p_I(I_t \mid Y_{0:t-1})\) of \eqref{eq:joint_ssi} for
+SSI — and \(\pi_Y\) is the SSI latent prior of \S~\ref{sec:mcmc_evidence}
+(absent in the SSE and Poisson cases).  By construction
+\begin{equation}\label{eq:Lbar_normalising}
+  \bar L_M \;=\; \int \tilde p(z)\, \mathrm{d}z,
+\end{equation}
+so \(\bar L_M\) is the normalising constant of the augmented target and
+\(p_{\mathrm{post}}(z) = \tilde p(z) / \bar L_M\) is the augmented
+posterior.  When \(\theta_{\mathrm u}\) is empty, \eqref{eq:augmented_target}
+collapses to the latent-only target \(\tilde p(Y)\) of
+\eqref{eq:L_def} and the development below reduces to that of
+\S~\ref{sec:mcmc_evidence}.
+
+\paragraph{Naive Monte Carlo.}  Draw
+\(\theta_{\mathrm u}^{(n)} \sim \pi\) and, for the SSI model,
+\(Y_{\mathcal T}^{(n)} \mid k^{(n)} \sim \pi_Y(\cdot \mid k^{(n)})\),
+jointly forming \(z^{(n)}\).  The estimator
+\begin{equation}\label{eq:L_naive_param}
+  \widehat{\bar L}_M^{\,\mathrm{naive}}
+  \;=\; \frac{1}{N}\sum_{n=1}^N
+        \mathcal L\!\bigl(z^{(n)};\, \theta_{\mathrm f}\bigr)
+\end{equation}
+is unbiased.  For the SSE and Poisson models the latent block is empty
+and \(\mathcal L(z; \theta_{\mathrm f})\) is the closed-form
+\(L_M(\theta^{(n)})\) of \eqref{eq:L_sse_general} or
+\eqref{eq:L_poisson_general}; no MCMC is required.  Naive MC inherits
+the variance pathology of \S~\ref{sec:naive_mc_evidence}: it is reliable
+when the prior and the augmented posterior overlap broadly, and degrades
+on informative histories where the posterior concentrates in a region of
+low prior mass.
+
+\paragraph{Importance sampling.}  Run HMC against \(\tilde p\) of
+\eqref{eq:augmented_target} to obtain posterior draws of the augmented
+vector \(z\).  Fit an independent-Gamma proposal
+\begin{equation}\label{eq:gamma_proposal_param}
+  g(z) \;=\; \prod_j \mathrm{Gamma}\!\bigl(z_j;\, \alpha_j, \beta_j\bigr)
+\end{equation}
+by method of moments \eqref{eq:mom_fit} to each marginal of the trace
+(the index \(j\) now ranges over the components of \(\theta_{\mathrm u}\)
+as well as the active days \(\mathcal T\)).  The importance-sampling
+estimator
+\begin{equation}\label{eq:L_is_param}
+  \widehat{\bar L}_M^{\,\mathrm{IS}}
+  \;=\; \frac{1}{N}\sum_{n=1}^N
+        \frac{\tilde p\!\bigl(z^{(n)}\bigr)}{g\!\bigl(z^{(n)}\bigr)},
+  \qquad z^{(n)} \stackrel{\mathrm{iid}}{\sim} g,
+\end{equation}
+is the literal extension of \eqref{eq:L_ssi_is}; the variance
+discussion of \S~\ref{sec:is_evidence} applies verbatim with
+\(\chi^2(p_{\mathrm{post}} \,\|\, g)\) now measured on the augmented
+space.  The Gamma proposal again matches the support of every
+component of \(z\): the latent infectivities are Gamma a priori, and
+both Gamma and LogNormal parameter priors are supported on the
+positive reals.
+
+\paragraph{Bridge sampling.}  With \(\{z^{p,(j)}\}_{j=1}^{N_1}\) from
+the HMC trace and \(\{z^{q,(i)}\}_{i=1}^{N_2}\) from the proposal
+\eqref{eq:gamma_proposal_param}, define the augmented log importance
+ratios
+\begin{equation*}
+  \ell_q^{(i)} \;=\; \log \tilde p\bigl(z^{q,(i)}\bigr) -
+                     \log g\bigl(z^{q,(i)}\bigr),
+  \qquad
+  \ell_p^{(j)} \;=\; \log \tilde p\bigl(z^{p,(j)}\bigr) -
+                     \log g\bigl(z^{p,(j)}\bigr).
+\end{equation*}
+The Meng--Wong identity \eqref{eq:bridge_identity} and its optimal
+bridge \(\alpha^*\) are unchanged in form (with \(\bar L_M\) replacing
+\(L_{\mathrm{SSI}}\) and the augmented variables in place of \(Y\)),
+and the log-space fixed-point iteration
+\eqref{eq:L_ssi_bridge_logspace} applies verbatim.
+
+\subsection{Simulation-based rejection scheme}
+
+The rejection sampler of \S~\ref{sec:simulation} extends without
+modification: for each simulated trajectory under model \(M\), draw a
+fresh \(\theta^{(i)} \sim \pi\), simulate the SSE / SSI / Poisson
+generative process forward with parameters \(\theta^{(i)}\), and retain
+only the trajectories whose first \(r\) cohorts match the observed
+\(I_{1:r}\).  The acceptance probability of a single \(M\)-trajectory is
+\(\int p(I_{1:r} \mid \theta, M)\, \pi(\theta)\, \mathrm{d}\theta =
+  \bar L_M\), so the empirical fraction of accepted trajectories that
+go on to a major outbreak is consistent for
+\(\overline{\mathrm{PMO}}_M\) of \eqref{eq:pmo_marginal}.  Pooling
+trajectories across the candidate set \(\mathcal{M}\) with per-batch
+model split \(\mathrm{Multinomial}(b, (\pi_M)_{M \in \mathcal{M}})\)
+realises the posterior model partition with expected fractions
+\(\pi_M\,\bar L_M\), so the composition of the accepted pool delivers
+the N-model average \(\overline{\mathrm{PMO}}_\mathrm{avg}\) of
+\eqref{eq:pmo_marginal} together with
+\eqref{eq:pi_post_general}--\eqref{eq:pmo_avg_general}, exactly as the
+two-model SSE/SSI case of \S~\ref{sec:simulation}.
+
 \end{document}

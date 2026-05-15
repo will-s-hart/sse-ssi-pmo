@@ -177,7 +177,7 @@ def fit_ssi(
         trace = trace.isel(draw=slice(0, None, thin))
         trace = trace.assign_coords(draw=np.arange(len(trace.posterior.draw)))
 
-    return az.to_datatree(trace)
+    return az.convert_to_datatree(trace)
 
 
 def fit_sse(
@@ -274,7 +274,7 @@ def fit_sse(
         trace = trace.isel(draw=slice(0, None, thin))
         trace = trace.assign_coords(draw=np.arange(len(trace.posterior.draw)))
 
-    return az.to_datatree(trace)
+    return az.convert_to_datatree(trace)
 
 
 __all__ = ["DEFAULT_PRIORS", "fit_sse", "fit_ssi"]

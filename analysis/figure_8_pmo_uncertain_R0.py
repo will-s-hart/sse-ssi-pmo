@@ -56,16 +56,10 @@ def main() -> None:
     df = pd.read_csv(RESULTS_DIR / "fig8_pmo_uncertain_R0.csv")
 
     default_w, default_h = plt.rcParams["figure.figsize"]
-    fig, (ax_top, ax_bot) = plt.subplots(
-        2, 1, figsize=(default_w, 1.85 * default_h), sharex=True
-    )
+    fig, (ax_top, ax_bot) = plt.subplots(2, 1, figsize=(default_w, 1.85 * default_h), sharex=True)
 
-    ax_top.fill_between(
-        df["r"], df["R0_lo_sse"], df["R0_hi_sse"], color=SSE_COLOUR, alpha=0.2
-    )
-    ax_top.fill_between(
-        df["r"], df["R0_lo_ssi"], df["R0_hi_ssi"], color=SSI_COLOUR, alpha=0.2
-    )
+    ax_top.fill_between(df["r"], df["R0_lo_sse"], df["R0_hi_sse"], color=SSE_COLOUR, alpha=0.2)
+    ax_top.fill_between(df["r"], df["R0_lo_ssi"], df["R0_hi_ssi"], color=SSI_COLOUR, alpha=0.2)
     ax_top.plot(
         df["r"],
         df["R0_med_sse"],

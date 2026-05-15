@@ -64,9 +64,7 @@ def main() -> None:
         alpha=0.85,
         label=SSE_LABEL,
     )
-    ax.bar(
-        x, df["pmo_ssi_mcmc"], width=bar_width, color=SSI_COLOUR, alpha=0.85, label=SSI_LABEL
-    )
+    ax.bar(x, df["pmo_ssi_mcmc"], width=bar_width, color=SSI_COLOUR, alpha=0.85, label=SSI_LABEL)
     ax.bar(
         x + bar_width,
         df["uncertain_mcmc"],

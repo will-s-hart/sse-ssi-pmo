@@ -24,9 +24,9 @@ Environment is managed by **pixi** (conda + editable PyPI install). All commands
 | `pixi run lint` | `ruff check src analysis` |
 | `pixi run fmt` | `ruff format src analysis` |
 | `pixi run typecheck` | `ty check src analysis` (clears `VIRTUAL_ENV` first) |
-| `pixi run res{1..7}` | Compute and write `results/figN_*.csv` for figure N |
-| `pixi run results` | Run all `res1..res7` (depends-on aggregate) |
-| `pixi run fig{1..7}` | Render `figures/figN_*.pdf` + `.png` from the corresponding CSV |
+| `pixi run res{1..10}` | Compute and write `results/figN_*.csv` for figure N |
+| `pixi run results` | Run all `res1..res10` (depends-on aggregate) |
+| `pixi run fig{1..10}` | Render `figures/figN_*.pdf` + `.png` from the corresponding CSV |
 | `pixi run figs` | Render all figures |
 
 There is **no test suite**. Validation is by reproducing the figures and cross-checking analytic vs. simulation/MCMC overlays.

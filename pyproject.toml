@@ -54,7 +54,8 @@ res6 = "python analysis/results_6_pmo_error.py"
 res7 = "python analysis/results_7_pmo_ensemble_error.py"
 res8 = "python analysis/results_8_pmo_uncertain_R0.py"
 res9 = "python analysis/results_9_pmo_uncertain_combined.py"
-results = { depends-on = ["res1", "res2", "res3", "res4", "res5", "res6", "res7", "res8", "res9"] }
+res10 = "python analysis/results_10_pmo_error_uncertain_R0.py"
+results = { depends-on = ["res1", "res2", "res3", "res4", "res5", "res6", "res7", "res8", "res9", "res10"] }
 fig1 = "python analysis/figure_1_pmo_vs_r.py"
 fig2 = "python analysis/figure_2_pmo_vs_R0.py"
 fig3 = "python analysis/figure_3_pmo_vs_k.py"
@@ -64,7 +65,8 @@ fig6 = "python analysis/figure_6_pmo_error.py"
 fig7 = "python analysis/figure_7_pmo_ensemble_error.py"
 fig8 = "python analysis/figure_8_pmo_uncertain_R0.py"
 fig9 = "python analysis/figure_9_pmo_uncertain_combined.py"
-figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5", "fig6", "fig7", "fig8", "fig9"] }
+fig10 = "python analysis/figure_10_pmo_error_uncertain_R0.py"
+figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5", "fig6", "fig7", "fig8", "fig9", "fig10"] }
 
 # ---------------------------------------------------------------------------
 # ruff

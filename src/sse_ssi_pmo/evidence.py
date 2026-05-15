@@ -475,9 +475,7 @@ def _sample_param(
     return np.full(n_samples, float(x), dtype=np.float64)
 
 
-def _prior_logpdf_or_zero(
-    x: float | Prior, values: NDArray[np.float64]
-) -> NDArray[np.float64]:
+def _prior_logpdf_or_zero(x: float | Prior, values: NDArray[np.float64]) -> NDArray[np.float64]:
     """``log π(values)`` when ``x`` is a :class:`Prior`; else a zero array.
 
     For fixed parameters this contributes nothing to the importance weight or
@@ -488,9 +486,7 @@ def _prior_logpdf_or_zero(
     return np.zeros(values.shape, dtype=np.float64)
 
 
-def _param_posterior_samples(
-    datatree: xr.DataTree, name: str
-) -> NDArray[np.float64] | None:
+def _param_posterior_samples(datatree: xr.DataTree, name: str) -> NDArray[np.float64] | None:
     """Flatten the ``(chain, draw)`` posterior of ``name``; ``None`` if absent.
 
     ``name`` is the PyMC RV name used by :func:`sse_ssi_pmo.inference.fit_sse`
@@ -799,9 +795,7 @@ def _log_evidence_ssi_mcmc(
     )
 
 
-def _fit_priors_from_prior_args(
-    R0: float | Prior, k: float | Prior
-) -> dict | None:
+def _fit_priors_from_prior_args(R0: float | Prior, k: float | Prior) -> dict | None:
     """Build the ``priors=`` dict for :func:`fit_sse` / :func:`fit_ssi`.
 
     Only includes entries for parameters that are :class:`Prior` instances —

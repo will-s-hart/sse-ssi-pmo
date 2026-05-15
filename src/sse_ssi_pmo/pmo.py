@@ -646,13 +646,11 @@ def pmo_uncertain(
                 _pmo_uncertain_mcmc(R0_p, k_p, w_arr, hist_2d[m], **kwargs) for m in range(M)
             ]
             out_dict = {
-                key: np.asarray([r[key] for r in per_row], dtype=np.float64)
-                for key in output_keys
+                key: np.asarray([r[key] for r in per_row], dtype=np.float64) for key in output_keys
             }
         else:
             raise ValueError(
-                f"pmo_uncertain: method must be 'mcmc' or 'simulation' under priors, "
-                f"got {method!r}"
+                f"pmo_uncertain: method must be 'mcmc' or 'simulation' under priors, got {method!r}"
             )
 
         def _maybe_scalar(arr):
@@ -846,8 +844,7 @@ def pmo_ensemble(
     if method == "analytic":
         if has_prior:
             raise ValueError(
-                "pmo_ensemble(method='analytic') does not accept Priors on R0/k; "
-                "use method='mcmc'."
+                "pmo_ensemble(method='analytic') does not accept Priors on R0/k; use method='mcmc'."
             )
         if kwargs:
             raise TypeError(

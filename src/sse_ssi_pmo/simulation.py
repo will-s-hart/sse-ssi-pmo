@@ -86,9 +86,7 @@ def _check_inputs_poisson(R0: float, w: NDArray[np.float64], threshold: int, t_m
         raise ValueError("t_max must be at least 1")
 
 
-def _expand_param(
-    x: float | NDArray[np.float64], n_sims: int, label: str
-) -> NDArray[np.float64]:
+def _expand_param(x: float | NDArray[np.float64], n_sims: int, label: str) -> NDArray[np.float64]:
     """Broadcast a scalar to ``(n_sims,)``; pass through arrays of that length.
 
     Raises if ``x`` is an array of any other length.
@@ -103,9 +101,7 @@ def _expand_param(
     )
 
 
-def _maybe_draw(
-    x: float | Prior, n_sims: int, rng: np.random.Generator
-) -> NDArray[np.float64]:
+def _maybe_draw(x: float | Prior, n_sims: int, rng: np.random.Generator) -> NDArray[np.float64]:
     """Per-sim parameter array: draw from a :class:`Prior` or broadcast a scalar."""
     if isinstance(x, Prior):
         return x.sample(n_sims, rng)
@@ -162,6 +158,8 @@ def _rejection_loop(
     if pbar is not None:
         pbar.close()
     return n_attempted
+
+
 # ---------------------------------------------------------------------------
 # Single-trajectory simulators (public)
 # ---------------------------------------------------------------------------

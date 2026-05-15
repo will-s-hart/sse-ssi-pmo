@@ -181,9 +181,7 @@ def _param_per_draw(
     return np.full(n_draws, float(x), dtype=np.float64)
 
 
-def _q_per_draw(
-    R0_draws: NDArray[np.float64], k_draws: NDArray[np.float64]
-) -> NDArray[np.float64]:
+def _q_per_draw(R0_draws: NDArray[np.float64], k_draws: NDArray[np.float64]) -> NDArray[np.float64]:
     """Per-draw extinction probability ``q_i`` via ``_nb_extinction_prob``."""
     n = R0_draws.size
     q = np.empty(n, dtype=np.float64)
@@ -661,9 +659,7 @@ def _pmo_per_spec_analytic(
         return pmo, log_L
     if kind == "poisson":
         pmo = float(np.asarray(_pmo_poisson_analytic(spec["R0"], w, history)).reshape(()))
-        log_L = float(
-            np.asarray(_log_evidence_poisson_general(spec["R0"], w, history)).reshape(())
-        )
+        log_L = float(np.asarray(_log_evidence_poisson_general(spec["R0"], w, history)).reshape(()))
         return pmo, log_L
     raise ValueError(f"unknown model kind {kind!r}; expected 'sse', 'ssi', or 'poisson'")
 
@@ -747,9 +743,7 @@ def _pmo_ensemble_mcmc(
                     n_samples=n_evidence_samples,
                 )
             else:
-                pmo_arr[i] = float(
-                    np.asarray(_pmo_sse_analytic(R0_i, k_i, w, history)).reshape(())
-                )
+                pmo_arr[i] = float(np.asarray(_pmo_sse_analytic(R0_i, k_i, w, history)).reshape(()))
                 log_L_arr[i] = float(
                     np.asarray(_log_evidence_sse_general(R0_i, k_i, w, history)).reshape(())
                 )

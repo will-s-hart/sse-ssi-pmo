@@ -8,10 +8,6 @@ __pycache__/
 
 # pixi
 .pixi/
-pixi.lock
-
-# Generated figures
-figures/
 
 # OS
 .DS_Store

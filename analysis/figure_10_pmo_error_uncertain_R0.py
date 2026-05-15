@@ -1,13 +1,13 @@
 """Figure 10: PMO error under model misspecification with uncertain R0.
 
 Two-column figure (one column per history length L in
-``FIG10_HISTORY_LENGTHS``) with two rows: mean *absolute* error (top) and
-mean *signed* error (bottom) in the PMO estimate, both averaged across
-simulations whose true model was drawn with probability
-``FIG10_PRIOR_SSE`` (SSE) or ``1 - FIG10_PRIOR_SSE`` (SSI) and whose
-true R0 was drawn from the Gamma prior the estimators integrate over.
-The three bars per panel correspond to assuming SSE, assuming SSI, and
-the model-averaged ``pmo_uncertain`` estimator.
+``FIG10_HISTORY_LENGTHS``) with two rows: RMS error (top; default,
+toggle with ``USE_RMSE``) and mean *signed* error (bottom) in the PMO
+estimate, both averaged across simulations whose true model was drawn
+with probability ``FIG10_PRIOR_SSE`` (SSE) or ``1 - FIG10_PRIOR_SSE``
+(SSI) and whose true R0 was drawn from the Gamma prior the estimators
+integrate over. The three bars per panel correspond to assuming SSE,
+assuming SSI, and the model-averaged ``pmo_uncertain`` estimator.
 
 Bars come from the MCMC columns if they are present in the CSV (the
 ``USE_MCMC=True`` run of the results script); otherwise they come from
@@ -15,9 +15,8 @@ the simulation columns. When MCMC bars are shown, the simulation
 estimates are overlaid as cross-check markers.
 
 Loads ``results/fig10_pmo_error_uncertain_R0.csv`` (run
-``results_10_pmo_error_uncertain_R0.py`` first). Set
-``USE_PERCENT_ERROR = True`` to switch both metrics to percentages
-(sims with ``pmo_true == 0`` are dropped from the percentage averages).
+``results_10_pmo_error_uncertain_R0.py`` first). Set ``USE_RMSE = False``
+to switch the top row back to mean absolute error.
 """
 
 from __future__ import annotations
@@ -50,7 +49,7 @@ PRIOR_SSE: float = FIG10_PRIOR_SSE
 R0_PRIOR_MEAN: float = FIG10_R0_PRIOR_MEAN
 R0_PRIOR_SD: float = FIG10_R0_PRIOR_SD
 HISTORY_LENGTHS: list[int] = FIG10_HISTORY_LENGTHS
-USE_PERCENT_ERROR: bool = False
+USE_RMSE: bool = True
 
 UNCERTAIN_COLOUR = "#009E73"  # match figs 6/9
 UNCERTAIN_LABEL = f"Model-averaged ($\\pi_\\mathrm{{SSE}}={PRIOR_SSE}$)"
@@ -65,12 +64,11 @@ ESTIMATORS: list[tuple[str, str, str, str]] = [
 
 def _aggregate(panel: pd.DataFrame, est_col: str, *, signed: bool) -> float:
     err = panel[est_col] - panel["pmo_true"]
-    if not signed:
-        err = err.abs()
-    if USE_PERCENT_ERROR:
-        mask = panel["pmo_true"] > 0
-        return float((err[mask] / panel["pmo_true"][mask]).mean() * 100.0)
-    return float(err.mean())
+    if signed:
+        return float(err.mean())
+    if USE_RMSE:
+        return float(np.sqrt((err**2).mean()))
+    return float(err.abs().mean())
 
 
 def _mcmc_present(df: pd.DataFrame) -> bool:
@@ -97,10 +95,10 @@ def main() -> None:
         squeeze=False,
     )
 
-    if USE_PERCENT_ERROR:
-        ylabels = ("Mean absolute % error in PMO", "Mean signed % error in PMO")
-    else:
-        ylabels = ("Mean absolute error in PMO", "Mean signed error in PMO")
+    ylabels = (
+        "RMS error in PMO" if USE_RMSE else "Mean absolute error in PMO",
+        "Mean signed error in PMO",
+    )
 
     labels = [lbl for _, _, lbl, _ in ESTIMATORS]
     colours = [col for _, _, _, col in ESTIMATORS]

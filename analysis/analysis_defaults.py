@@ -19,9 +19,9 @@ FIG3_K_MAX: float = 10.0
 DEFAULT_N_POINTS: int = 200
 
 # --- simulation-overlay defaults ---
-SIM_THRESHOLD: int = 20  # single-step incidence treated as a major outbreak
+SIM_THRESHOLD: int = 100  # single-step incidence treated as a major outbreak
 SIM_T_MAX: int = 200  # max trajectory length (weeks)
-SIM_N_SSE: int = 10_000  # SSE sims per parameter set
+SIM_N_SSE: int = 50_000  # SSE sims per parameter set
 SIM_N_SSI: int = 5_000  # matching SSI sims per parameter set
 SIM_BATCH_SSI: int = 10_000  # SSI batch size for rejection sampling
 SIM_MAX_ATTEMPTS_SSI: int = 4_000_000  # safety cap on SSI sim attempts
@@ -62,7 +62,7 @@ FIG5_SIM_MAX_ATTEMPTS: int = 8_000_000
 
 # --- figure 6 (PMO error under model misspecification vs. averaging) ---
 FIG6_PRIOR_SSE: float = 0.5
-FIG6_HISTORY_LENGTHS: list[int] = [2, 3]
+FIG6_HISTORY_LENGTHS: list[int] = [2, 3, 4]
 FIG6_N_SIM: int = 5000
 
 # --- figure 7 (PMO ensemble error across 5 models) ---

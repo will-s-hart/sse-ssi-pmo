@@ -35,6 +35,8 @@ To run a one-off script (e.g. during development): `pixi run python analysis/res
 
 The package is installed editable via `[tool.pixi.pypi-dependencies]` — edits under `src/sse_ssi_pmo/` take effect immediately.
 
+**Worktrees have their own pixi env.** When working in a worktree, run `pixi run …` from the *worktree's* directory, not the base project. The base-project env resolves the base-project `pyproject.toml` / `pixi.lock` / `src/`, which won't pick up worktree-local edits (e.g. new dependencies, library changes), and reads/writes `results/` and `figures/` in the wrong checkout. Verify with `pwd` before invoking `pixi run`; a one-off cross-tree call needs `pixi run --manifest-path <worktree>/pyproject.toml …`.
+
 ## Development
 
 The main branch is protected. Workflow for feature development:

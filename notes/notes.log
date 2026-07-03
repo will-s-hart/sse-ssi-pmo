@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.31)  13 MAY 2026 10:41
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (TeX Live 2025) (preloaded format=pdflatex 2025.3.31)  3 JUL 2026 21:09
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -251,17 +251,21 @@ sy/m/n/10 ^^X []\OT1/cmr/m/n/10 (\OML/cmm/m/it/10 kI[]; k\OT1/cmr/m/n/10 )$
 
 [12]
 
-[13] (./notes.aux)
+[13]
+
+[14]
+
+[15] (./notes.aux)
  ***********
 LaTeX2e <2024-11-01> patch level 2
 L3 programming layer <2025-01-18>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 2478 strings out of 473190
- 35888 string characters out of 5715800
- 447250 words of memory out of 5000000
- 25743 multiletter control sequences out of 15000+600000
+ 2487 strings out of 473190
+ 36058 string characters out of 5715800
+ 447417 words of memory out of 5000000
+ 25752 multiletter control sequences out of 15000+600000
  568329 words of font info for 73 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  57i,16n,65p,236b,183s stack positions out of 10000i,1000n,20000p,200000b,200000s
@@ -285,10 +289,10 @@ ive/2025/texmf-dist/fonts/type1/public/amsfonts/cm/cmr8.pfb></usr/local/texlive
 /texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/local/texlive/2025/
 texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/local/texlive/2
 025/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb>
-Output written on notes.pdf (13 pages, 294029 bytes).
+Output written on notes.pdf (15 pages, 308807 bytes).
 PDF statistics:
- 148 PDF objects out of 1000 (max. 8388607)
- 92 compressed objects within 1 object stream
+ 154 PDF objects out of 1000 (max. 8388607)
+ 96 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
  1 words of extra memory for PDF output out of 10000 (max. 10000000)
 

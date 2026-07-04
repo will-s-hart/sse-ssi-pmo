@@ -89,6 +89,6 @@ Two scripts per figure, run in order:
 1. `results_N_*.py` → writes `results/figN_*.csv`. Expensive (sims/MCMC).
 2. `figure_N_*.py` → reads the CSV and writes `figures/figN_*.pdf` and `.png`.
 
-Shared constants (defaults for `R0`, `k`, serial interval, simulation budgets, history sets for figs 4–7) live in `analysis/analysis_defaults.py`. Plotting helpers in `analysis/_plotting.py`. `figures/` is gitignored; CSVs in `results/` are committed.
+Shared constants (defaults for `R0`, `k`, serial interval, simulation budgets, history sets for figs 4–7) live in `analysis/analysis_defaults.py`. Plotting helpers in `analysis/_plotting.py`. Rendered `figures/*.pdf`/`.png` and `results/*.csv` are both committed to the repo.
 
 The two-step split means: changing a plot style only re-runs `fig*`; changing a model means re-running the matching `res*` first.

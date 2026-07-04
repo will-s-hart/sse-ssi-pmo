@@ -258,6 +258,266 @@ def _resolution_index_delay(onset: NDArray[np.int64], threshold: int, major: boo
 
 
 # ---------------------------------------------------------------------------
+# Real-time PMO via a bootstrap particle filter (private)
+# ---------------------------------------------------------------------------
+
+
+def _delay_step_inplace(
+    model: str,
+    onset: NDArray[np.int64],
+    Y: NDArray[np.float64],
+    pending: NDArray[np.int64],
+    w: int,
+    *,
+    R0: float,
+    k: float,
+    tost: NDArray[np.float64],
+    inc_cdf: NDArray[np.float64],
+    inc_support: NDArray[np.int64],
+    p_nb: float,
+    t_max: int,
+    rng: np.random.Generator,
+    live_idx: NDArray[np.int64],
+) -> None:
+    """Process week ``w`` (one transmission step) for particles ``live_idx`` in place.
+
+    Assumes ``onset[:, w]`` is already scheduled/known. Realises the week-``w``
+    onsets against ``pending``, (SSI) draws ``Y[:, w]`` from the cohort size,
+    computes the force of infection, draws new infections, and scatters them
+    forward to future onset weeks. Same numerics as :func:`_batch_delay` but for
+    a single week and scalar ``(R0, k)``.
+    """
+    if live_idx.size == 0:
+        return
+    if w >= 1:
+        pending[live_idx] -= onset[live_idx, w]
+    L_use = min(w + 1, tost.size)
+    tost_rev = tost[:L_use][::-1]
+    if model == "ssi":
+        if w >= 1:
+            nz_onset = onset[live_idx, w] > 0
+            if nz_onset.any():
+                sel = live_idx[nz_onset]
+                Y[sel, w] = rng.gamma(k * onset[sel, w], 1.0 / k)
+        foi = R0 * (Y[live_idx, w + 1 - L_use : w + 1] @ tost_rev)
+    else:
+        foi = onset[live_idx, w + 1 - L_use : w + 1] @ tost_rev
+    new_inf = np.zeros(live_idx.size, dtype=np.int64)
+    nz = foi > 0.0
+    if nz.any():
+        if model == "ssi":
+            new_inf[nz] = rng.poisson(foi[nz])
+        else:
+            new_inf[nz] = rng.negative_binomial(k * foi[nz], p_nb)
+    pending[live_idx] += new_inf
+    total = int(new_inf.sum())
+    if total > 0:
+        sim_of_each = np.repeat(live_idx, new_inf)
+        incs = _sample_incubation(inc_cdf, inc_support, total, rng)
+        target = w + incs
+        in_range = target < t_max
+        if in_range.any():
+            np.add.at(onset, (sim_of_each[in_range], target[in_range]), 1)
+
+
+def _resolve_forward(
+    model: str,
+    onset: NDArray[np.int64],
+    Y: NDArray[np.float64],
+    pending: NDArray[np.int64],
+    w_start: int,
+    *,
+    R0: float,
+    k: float,
+    tost: NDArray[np.float64],
+    inc_cdf: NDArray[np.float64],
+    inc_support: NDArray[np.int64],
+    p_nb: float,
+    threshold: int,
+    t_max: int,
+    rng: np.random.Generator,
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Free-forward each particle from week ``w_start`` until it resolves.
+
+    Steps every particle forward (no history matching) until it reaches the
+    major-outbreak threshold or goes extinct, mirroring :func:`_batch_delay`'s
+    resolution. Mutates ``onset``/``Y``/``pending`` — pass copies. Returns
+    ``(major, extinct)`` boolean arrays.
+    """
+    n = onset.shape[0]
+    tost_max = tost.size - 1
+    major = np.zeros(n, dtype=bool)
+    extinct = np.zeros(n, dtype=bool)
+    for w in range(w_start, t_max):
+        live = ~(major | extinct)
+        if not live.any():
+            break
+        new_major = live & (onset[:, w] >= threshold)
+        major[new_major] = True
+        live &= ~new_major
+        if not live.any():
+            break
+        live_idx = np.where(live)[0]
+        _delay_step_inplace(
+            model,
+            onset,
+            Y,
+            pending,
+            w,
+            R0=R0,
+            k=k,
+            tost=tost,
+            inc_cdf=inc_cdf,
+            inc_support=inc_support,
+            p_nb=p_nb,
+            t_max=t_max,
+            rng=rng,
+            live_idx=live_idx,
+        )
+        ext_start = max(0, w - tost_max + 1)
+        window_zero = onset[live_idx, ext_start : w + 1].sum(axis=1) == 0
+        new_extinct = (pending[live_idx] == 0) & window_zero
+        extinct[live_idx[new_extinct]] = True
+    return major, extinct
+
+
+def _pmo_delay_realtime(
+    model: str,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    observed: ArrayLike,
+    *,
+    n_particles: int,
+    threshold: int,
+    t_max: int,
+    rng: np.random.Generator | None = None,
+) -> dict[str, NDArray]:
+    """Real-time PMO across the weeks of an observed onset history.
+
+    A bootstrap particle filter over the latent state (the incubation pipeline
+    and, for SSI, the infectivities). ``n_particles`` particles are advanced one
+    week at a time; at each week the particles whose scheduled onset count
+    matches the observation are kept and resampled (with replacement) back up to
+    ``n_particles``. The week-``w`` PMO is the fraction of the resampled
+    week-``w`` population that reaches a major outbreak when simulated forward
+    freely — i.e. the probability of a major outbreak conditional on the onset
+    history observed up to and including week ``w``.
+
+    Far more efficient than per-week rejection sampling for long histories: the
+    expensive early-history match is reused via resampling instead of being
+    re-simulated from scratch every attempt.
+
+    Returns a dict with ``"pmo"``, ``"n_matches"`` (particles matching before
+    resampling), ``"n_distinct"`` (distinct particles after resampling), and
+    ``"n_indet"`` (forward sims unresolved at ``t_max``) — each length ``L``.
+    ``pmo`` is ``NaN`` from the week the filter collapses (no matching particle).
+    """
+    rng = np.random.default_rng() if rng is None else rng
+    tost_arr = np.asarray(tost, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    obs = np.asarray(observed, dtype=np.int64)
+    _check_inputs_delay(R0, k, tost_arr, inc_arr, threshold, t_max)
+    if obs.ndim != 1 or obs.size == 0:
+        raise ValueError("observed must be a non-empty 1-D onset history")
+    if obs[0] < 1:
+        raise ValueError("observed[0] (index onset) must be >= 1")
+    if obs.size > t_max:
+        raise ValueError("observed history longer than t_max")
+    if n_particles < 1:
+        raise ValueError("n_particles must be at least 1")
+
+    L = obs.size
+    N = n_particles
+    inc_cdf, inc_support = _inc_sampler(inc_arr)
+    p_nb = k / (k + R0)
+
+    onset = np.zeros((N, t_max), dtype=np.int64)
+    onset[:, 0] = int(obs[0])
+    Y = np.zeros((N, t_max), dtype=np.float64)
+    if model == "ssi":
+        Y[:, 0] = rng.gamma(k * int(obs[0]), 1.0 / k, size=N)
+    pending = np.zeros(N, dtype=np.int64)
+
+    pmo = np.full(L, np.nan, dtype=np.float64)
+    n_matches = np.zeros(L, dtype=np.int64)
+    n_distinct = np.zeros(L, dtype=np.int64)
+    n_indet = np.zeros(L, dtype=np.int64)
+    all_idx = np.arange(N)
+
+    for w in range(L):
+        # onset[:, w] is known: the seed for w == 0, else scheduled by prior steps.
+        if w == 0:
+            n_matches[0] = N
+            n_distinct[0] = N
+        else:
+            match_idx = np.where(onset[:, w] == obs[w])[0]
+            n_matches[w] = match_idx.size
+            if match_idx.size == 0:
+                warnings.warn(
+                    f"real-time PMO particle filter collapsed at week {w} "
+                    f"(no particle matched onset={obs[w]}); PMO is NaN from week {w}. "
+                    "Increase n_particles.",
+                    stacklevel=2,
+                )
+                break
+            chosen = rng.choice(match_idx, size=N, replace=True)
+            onset = onset[chosen]
+            Y = Y[chosen]
+            pending = pending[chosen]
+            n_distinct[w] = int(np.unique(chosen).size)
+
+        major, extinct = _resolve_forward(
+            model,
+            onset.copy(),
+            Y.copy(),
+            pending.copy(),
+            w,
+            R0=R0,
+            k=k,
+            tost=tost_arr,
+            inc_cdf=inc_cdf,
+            inc_support=inc_support,
+            p_nb=p_nb,
+            threshold=threshold,
+            t_max=t_max,
+            rng=rng,
+        )
+        resolved = major | extinct
+        n_indet[w] = int((~resolved).sum())
+        n_res = int(resolved.sum())
+        pmo[w] = float(major.sum()) / n_res if n_res else np.nan
+
+        # Advance the filter one week (schedules onset[:, w + 1]) for the next match.
+        if w < L - 1:
+            _delay_step_inplace(
+                model,
+                onset,
+                Y,
+                pending,
+                w,
+                R0=R0,
+                k=k,
+                tost=tost_arr,
+                inc_cdf=inc_cdf,
+                inc_support=inc_support,
+                p_nb=p_nb,
+                t_max=t_max,
+                rng=rng,
+                live_idx=all_idx,
+            )
+
+    if int(n_indet.sum()) > 0:
+        warnings.warn(
+            f"{int(n_indet.sum())} forward sims across weeks hit t_max={t_max} "
+            "unresolved; raise t_max.",
+            stacklevel=2,
+        )
+    return {"pmo": pmo, "n_matches": n_matches, "n_distinct": n_distinct, "n_indet": n_indet}
+
+
+# ---------------------------------------------------------------------------
 # Single-trajectory simulators (public)
 # ---------------------------------------------------------------------------
 

@@ -26,14 +26,17 @@ See ``notes/notes.tex`` for the mathematical derivation. This package exposes:
 
 from sse_ssi_pmo.inference import fit_sse, fit_ssi
 from sse_ssi_pmo.pmo import (
+    PmoDelayRealtimeResult,
     PmoEnsembleResult,
     PmoUncertainResult,
     pmo_ensemble,
     pmo_poisson,
     pmo_sse,
     pmo_sse_delay,
+    pmo_sse_delay_realtime,
     pmo_ssi,
     pmo_ssi_delay,
+    pmo_ssi_delay_realtime,
     pmo_uncertain,
 )
 from sse_ssi_pmo.priors import Prior
@@ -42,6 +45,7 @@ from sse_ssi_pmo.simulation import simulate_poisson, simulate_sse, simulate_ssi
 from sse_ssi_pmo.simulation_delay import simulate_sse_delay, simulate_ssi_delay
 
 __all__ = [
+    "PmoDelayRealtimeResult",
     "PmoEnsembleResult",
     "PmoUncertainResult",
     "Prior",
@@ -54,8 +58,10 @@ __all__ = [
     "pmo_poisson",
     "pmo_sse",
     "pmo_sse_delay",
+    "pmo_sse_delay_realtime",
     "pmo_ssi",
     "pmo_ssi_delay",
+    "pmo_ssi_delay_realtime",
     "pmo_uncertain",
     "simulate_poisson",
     "simulate_sse",

@@ -1365,6 +1365,22 @@ still decompose independently, and the SSI infectivities admit the same
 conditioning arguments --- but are not pursued here; the simulation-based
 estimator suffices for the exploratory comparisons of interest.
 
+\paragraph{Real-time monitoring.}
+Independent rejection sampling becomes inefficient when the probability of a
+major outbreak is required \emph{sequentially}, at each week of an unfolding
+outbreak, since matching the full observed onset history to week $t$ has an
+acceptance probability that decays rapidly in $t$.  A bootstrap particle filter
+is far more efficient: a population of trajectories is advanced one week at a
+time, and at each week the particles whose newly realised onset cohort matches
+the observation are retained and resampled with replacement, so the hard-won
+early-history match is reused rather than re-simulated.  Because the incubation
+delay is at least one time unit, the week-$t$ onset cohort is already determined
+by the state carried in each particle, so conditioning on it requires no fresh
+simulation; the retained particles then represent the distribution of the latent
+state given the onsets to week $t$, and simulating each forward freely to
+resolution yields the probability of a major outbreak conditional on the history
+observed so far.
+
 \paragraph{Reporting delays (future extension).}
 A natural refinement retains this onset process model but adds a reporting
 delay: at the time of analysis some symptom onsets have not yet been reported,

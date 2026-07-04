@@ -86,6 +86,7 @@ from sse_ssi_pmo.simulation import (
     _pmo_uncertain_sim_multi,
 )
 from sse_ssi_pmo.simulation_delay import (
+    _pmo_delay_realtime,
     _pmo_sse_delay_sim_multi,
     _pmo_ssi_delay_sim_multi,
 )
@@ -913,6 +914,25 @@ def pmo_ensemble(
     )
 
 
+class PmoDelayRealtimeResult(NamedTuple):
+    """Return type of :func:`pmo_sse_delay_realtime` / :func:`pmo_ssi_delay_realtime`.
+
+    Each field is a length-``L`` array over the weeks of the observed onset
+    ``history``. ``pmo`` is the probability of a major outbreak conditional on
+    the onset history observed up to and including each week (``NaN`` from the
+    week the particle filter collapses, if any). ``n_matches`` /
+    ``n_distinct`` are the number of particles matching the observation before
+    resampling and the number of distinct particles after resampling (a
+    diagnostic of particle diversity); ``n_indet`` is the number of forward
+    sims left unresolved at ``t_max`` at each week.
+    """
+
+    pmo: NDArray[np.float64]
+    n_matches: NDArray[np.int64]
+    n_distinct: NDArray[np.int64]
+    n_indet: NDArray[np.int64]
+
+
 def _validate_delay_weights(tost: NDArray[np.float64], inc: NDArray[np.float64]) -> None:
     """Validate the TOST and incubation weight arrays for the onset-anchored models."""
     for name, arr in (("tost", tost), ("inc", inc)):
@@ -1022,14 +1042,103 @@ def pmo_ssi_delay(
     )
 
 
+def _pmo_delay_realtime_dispatch(
+    model: str,
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    kwargs: dict,
+) -> PmoDelayRealtimeResult:
+    """Shared body for :func:`pmo_sse_delay_realtime` / :func:`pmo_ssi_delay_realtime`."""
+    if np.ndim(R0) != 0 or np.ndim(k) != 0:
+        raise ValueError(f"pmo_{model}_delay_realtime: R0 and k must be scalars")
+    if float(R0) <= 0.0 or float(k) <= 0.0:
+        raise ValueError("R0 and k must be positive")
+    tost_arr = np.asarray(tost, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    _validate_delay_weights(tost_arr, inc_arr)
+    hist = np.asarray(history, dtype=np.int64)
+    if hist.ndim != 1 or hist.size == 0:
+        raise ValueError("history must be a non-empty 1-D onset history")
+    if hist.min() < 0:
+        raise ValueError("history entries must be non-negative")
+    if hist[0] < 1:
+        raise ValueError("history[0] (index onset) must be >= 1")
+    out = _pmo_delay_realtime(model, float(R0), float(k), tost_arr, inc_arr, hist, **kwargs)
+    return PmoDelayRealtimeResult(**out)
+
+
+def pmo_sse_delay_realtime(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    **kwargs,
+) -> PmoDelayRealtimeResult:
+    """Real-time onset-anchored SSE PMO across the weeks of an observed history.
+
+    For each week of the observed onset ``history``, estimates the probability
+    of a major outbreak conditional on the onsets seen up to and including that
+    week, via a bootstrap particle filter over the latent incubation pipeline
+    (see ``notes/notes.tex`` and :func:`pmo_sse_delay`). Far more efficient than
+    re-running rejection sampling per week. ``R0`` and ``k`` must be scalars.
+
+    Parameters
+    ----------
+    R0, k, tost, inc
+        As in :func:`pmo_sse_delay`.
+    history
+        Observed weekly onset incidence as a 1-D array ``(D_0, D_1, ..., D_r)``.
+    **kwargs
+        Forwarded to the particle-filter backend: ``n_particles``,
+        ``threshold``, ``t_max``, ``rng``.
+
+    Returns
+    -------
+    PmoDelayRealtimeResult
+        Named tuple ``(pmo, n_matches, n_distinct, n_indet)``, each length
+        ``len(history)`` — see :class:`PmoDelayRealtimeResult`.
+    """
+    return _pmo_delay_realtime_dispatch(
+        "sse", R0=R0, k=k, tost=tost, inc=inc, history=history, kwargs=kwargs
+    )
+
+
+def pmo_ssi_delay_realtime(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    **kwargs,
+) -> PmoDelayRealtimeResult:
+    """Real-time onset-anchored SSI PMO across the weeks of an observed history.
+
+    SSI counterpart of :func:`pmo_sse_delay_realtime` (see it and
+    :func:`pmo_ssi_delay` for conventions).
+    """
+    return _pmo_delay_realtime_dispatch(
+        "ssi", R0=R0, k=k, tost=tost, inc=inc, history=history, kwargs=kwargs
+    )
+
+
 __all__ = [
+    "PmoDelayRealtimeResult",
     "PmoEnsembleResult",
     "PmoUncertainResult",
     "pmo_ensemble",
     "pmo_poisson",
     "pmo_sse",
     "pmo_sse_delay",
+    "pmo_sse_delay_realtime",
     "pmo_ssi",
     "pmo_ssi_delay",
+    "pmo_ssi_delay_realtime",
     "pmo_uncertain",
 ]

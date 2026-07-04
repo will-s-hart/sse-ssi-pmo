@@ -128,3 +128,19 @@ FIG11_R_MAX: int = FIG1_R_MAX
 
 # --- figure 12 (onset-anchored PMO comparison across histories) ---
 FIG12_HISTORIES: list[list[int]] = FIG4_HISTORIES
+
+# --- figure 13 (real-time onset-anchored PMO over a real EVD outbreak) ---
+# Symptom-onset dates (dd/mm/yyyy) for the 2017 Likati (Bas-Uele, DRC) EVD
+# outbreak; binned into calendar (Mon-Sun) weeks. PMO at each week conditions
+# on the onset history observed up to that week.
+FIG13_ONSET_DATES: list[str] = [
+    "27/03/2017",
+    "18/04/2017",
+    "24/04/2017",
+    "01/05/2017",
+    "26/04/2017",
+    "30/04/2017",
+    "02/05/2017",
+    "11/05/2017",
+]
+FIG13_N_PARTICLES: int = 50_000  # bootstrap particle-filter population size

@@ -85,6 +85,10 @@ from sse_ssi_pmo.simulation import (
     _pmo_ssi_sim_multi,
     _pmo_uncertain_sim_multi,
 )
+from sse_ssi_pmo.simulation_delay import (
+    _pmo_sse_delay_sim_multi,
+    _pmo_ssi_delay_sim_multi,
+)
 
 
 def _has_prior(R0, k) -> bool:
@@ -909,12 +913,123 @@ def pmo_ensemble(
     )
 
 
+def _validate_delay_weights(tost: NDArray[np.float64], inc: NDArray[np.float64]) -> None:
+    """Validate the TOST and incubation weight arrays for the onset-anchored models."""
+    for name, arr in (("tost", tost), ("inc", inc)):
+        if arr.ndim != 1 or arr.size == 0:
+            raise ValueError(f"{name} must be a non-empty 1-D array")
+        if (arr < 0.0).any():
+            raise ValueError(f"{name} must be non-negative")
+        if not arr.sum() > 0.0:
+            raise ValueError(f"{name} must have positive total mass")
+
+
+def _pmo_delay_dispatch(
+    model: str,
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    method: str,
+    kwargs: dict,
+) -> float | NDArray[np.float64]:
+    """Shared body for :func:`pmo_sse_delay` / :func:`pmo_ssi_delay`."""
+    if method != "simulation":
+        raise NotImplementedError(
+            f"pmo_{model}_delay only supports method='simulation' "
+            f"(the onset-anchored models are simulation-only), got {method!r}."
+        )
+    if np.ndim(R0) != 0 or np.ndim(k) != 0:
+        raise ValueError(f"pmo_{model}_delay: R0 and k must be scalars (no broadcasting yet)")
+    if float(R0) <= 0.0 or float(k) <= 0.0:
+        raise ValueError("R0 and k must be positive")
+    tost_arr = np.asarray(tost, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    _validate_delay_weights(tost_arr, inc_arr)
+    hist_2d, was_1d = _validate_histories(history)
+    fn = _pmo_sse_delay_sim_multi if model == "sse" else _pmo_ssi_delay_sim_multi
+    out = fn(float(R0), float(k), tost_arr, inc_arr, hist_2d, **kwargs)
+    return float(out[0]) if was_1d else out
+
+
+def pmo_sse_delay(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    method: Literal["simulation"] = "simulation",
+    **kwargs,
+) -> float | NDArray[np.float64]:
+    """Probability of major outbreak under the onset-anchored SSE model.
+
+    Symptom-onset-anchored variant of :func:`pmo_sse`: the observed ``history``
+    is symptom-onset incidence ``(D_0, D_1, ..., D_r)``, transmission is driven
+    by the TOST weights ``tost`` (indexed from lag 0), and infections are mapped
+    forward to onsets by the incubation weights ``inc`` (indexed from lag 1).
+    See ``notes/notes.tex`` §"Symptom-onset data and delayed transmission".
+
+    Estimated by rejection sampling only — the observed onsets do not determine
+    the latent incubation pipeline, so there is no closed form or seed-and-
+    continue shortcut. ``R0`` and ``k`` must be scalars.
+
+    Parameters
+    ----------
+    R0, k
+        Reproduction number and dispersion parameter (positive scalars).
+    tost
+        TOST weights ``tost[s]`` for ``s = 0, 1, ...`` (from lag 0); non-negative
+        1-D array, need not sum to exactly 1.
+    inc
+        Incubation-period weights ``inc[a-1]`` for ``a = 1, 2, ...`` (from lag 1);
+        non-negative 1-D array.
+    history
+        Observed onset incidence as a 1-D array or a 2-D ``(M, L)`` array of
+        histories (see :func:`pmo_sse` for the convention). For 2-D input all
+        rows must share the same ``D_0`` (shared rejection-sampling pass).
+    method
+        Only ``"simulation"`` is supported. Keyword arguments (``n_sims``,
+        ``threshold``, ``t_max``, ``rng``, ``batch_size``, ``max_attempts``,
+        ``show_progress``) are forwarded to the simulation backend.
+    """
+    return _pmo_delay_dispatch(
+        "sse", R0=R0, k=k, tost=tost, inc=inc, history=history, method=method, kwargs=kwargs
+    )
+
+
+def pmo_ssi_delay(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    method: Literal["simulation"] = "simulation",
+    **kwargs,
+) -> float | NDArray[np.float64]:
+    """Probability of major outbreak under the onset-anchored SSI model.
+
+    Symptom-onset-anchored variant of :func:`pmo_ssi` (see
+    :func:`pmo_sse_delay` for the shared parameter conventions). Each onset
+    cohort carries a latent aggregate infectivity ``Y_t ~ Gamma(k*D_t, k)`` and
+    new infections are ``Poisson(R0 * sum_s tost_s Y_{t-s})``. Simulation-only.
+    """
+    return _pmo_delay_dispatch(
+        "ssi", R0=R0, k=k, tost=tost, inc=inc, history=history, method=method, kwargs=kwargs
+    )
+
+
 __all__ = [
     "PmoEnsembleResult",
     "PmoUncertainResult",
     "pmo_ensemble",
     "pmo_poisson",
     "pmo_sse",
+    "pmo_sse_delay",
     "pmo_ssi",
+    "pmo_ssi_delay",
     "pmo_uncertain",
 ]

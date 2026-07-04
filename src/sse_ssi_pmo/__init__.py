@@ -31,12 +31,15 @@ from sse_ssi_pmo.pmo import (
     pmo_ensemble,
     pmo_poisson,
     pmo_sse,
+    pmo_sse_delay,
     pmo_ssi,
+    pmo_ssi_delay,
     pmo_uncertain,
 )
 from sse_ssi_pmo.priors import Prior
 from sse_ssi_pmo.serial_interval import cumulative, discretise, discretise_gamma
 from sse_ssi_pmo.simulation import simulate_poisson, simulate_sse, simulate_ssi
+from sse_ssi_pmo.simulation_delay import simulate_sse_delay, simulate_ssi_delay
 
 __all__ = [
     "PmoEnsembleResult",
@@ -50,9 +53,13 @@ __all__ = [
     "pmo_ensemble",
     "pmo_poisson",
     "pmo_sse",
+    "pmo_sse_delay",
     "pmo_ssi",
+    "pmo_ssi_delay",
     "pmo_uncertain",
     "simulate_poisson",
     "simulate_sse",
+    "simulate_sse_delay",
     "simulate_ssi",
+    "simulate_ssi_delay",
 ]

@@ -106,3 +106,25 @@ FIG10_MCMC_CHAINS: int = FIG8_MCMC_CHAINS
 FIG10_SIM_N: int = FIG5_SIM_N
 FIG10_SIM_BATCH: int = FIG5_SIM_BATCH
 FIG10_SIM_MAX_ATTEMPTS: int = FIG5_SIM_MAX_ATTEMPTS
+
+# --- symptom-onset-anchored (delay) models: TOST + incubation (weeks) ---
+# Observed data are symptom onsets, not infections; transmission is anchored to
+# a case's own onset via the TOST distribution (from lag 0) and infections are
+# mapped forward to onsets via the incubation period (from lag 1). Means chosen
+# so the implied onset-to-onset SI (= TOST + incubation) roughly matches
+# DEFAULT_SI_MEAN (~2.2 wk after Cori discretisation); tunable. Ebola-plausible.
+DELAY_INC_MEAN: float = 1.2  # incubation-period mean (weeks; Ebola ~8-9 days)
+DELAY_INC_SD: float = 1.0  # incubation-period SD (weeks)
+DELAY_INC_MAX: int = 10  # incubation discretisation upper bound (weeks)
+DELAY_TOST_MEAN: float = 0.8  # time from onset to transmission mean (weeks)
+DELAY_TOST_SD: float = 0.7  # TOST SD (weeks)
+DELAY_TOST_MAX: int = 10  # TOST discretisation upper bound (weeks)
+DELAY_SIM_N: int = 5_000  # matching sims per parameter set / history
+DELAY_SIM_BATCH: int = 10_000  # rejection-sampling batch size
+DELAY_SIM_MAX_ATTEMPTS: int = 8_000_000  # safety cap on sim attempts
+
+# --- figure 11 (onset-anchored PMO vs r) ---
+FIG11_R_MAX: int = FIG1_R_MAX
+
+# --- figure 12 (onset-anchored PMO comparison across histories) ---
+FIG12_HISTORIES: list[list[int]] = FIG4_HISTORIES

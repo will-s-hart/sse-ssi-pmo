@@ -924,13 +924,18 @@ class PmoDelayRealtimeResult(NamedTuple):
     ``n_distinct`` are the number of particles matching the observation before
     resampling and the number of distinct particles after resampling (a
     diagnostic of particle diversity); ``n_indet`` is the number of forward
-    sims left unresolved at ``t_max`` at each week.
+    sims left unresolved at ``t_max`` at each week. ``log_evidence`` is the
+    running log marginal likelihood of the observed onsets under the model (the
+    sequential Monte Carlo evidence estimate); ratios of ``exp(log_evidence)``
+    across models yield the posterior model probabilities for Bayesian model
+    averaging.
     """
 
     pmo: NDArray[np.float64]
     n_matches: NDArray[np.int64]
     n_distinct: NDArray[np.int64]
     n_indet: NDArray[np.int64]
+    log_evidence: NDArray[np.float64]
 
 
 def _validate_delay_weights(tost: NDArray[np.float64], inc: NDArray[np.float64]) -> None:

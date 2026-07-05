@@ -410,9 +410,15 @@ def _pmo_delay_realtime(
     re-simulated from scratch every attempt.
 
     Returns a dict with ``"pmo"``, ``"n_matches"`` (particles matching before
-    resampling), ``"n_distinct"`` (distinct particles after resampling), and
-    ``"n_indet"`` (forward sims unresolved at ``t_max``) — each length ``L``.
-    ``pmo`` is ``NaN`` from the week the filter collapses (no matching particle).
+    resampling), ``"n_distinct"`` (distinct particles after resampling),
+    ``"n_indet"`` (forward sims unresolved at ``t_max``), and ``"log_evidence"``
+    — each length ``L``. ``log_evidence[w]`` is the running log marginal
+    likelihood of the observed onsets ``D_1..D_w`` given ``D_0`` under this
+    model, i.e. ``sum_{u=1..w} log(n_matches[u] / n_particles)`` — the standard
+    sequential Monte Carlo evidence estimate. Ratios of ``exp(log_evidence)``
+    across models give the posterior model probabilities for Bayesian model
+    averaging. ``pmo`` is ``NaN`` (and ``log_evidence`` ``-inf``) from the week
+    the filter collapses (no matching particle).
     """
     rng = np.random.default_rng() if rng is None else rng
     tost_arr = np.asarray(tost, dtype=np.float64)
@@ -444,6 +450,8 @@ def _pmo_delay_realtime(
     n_matches = np.zeros(L, dtype=np.int64)
     n_distinct = np.zeros(L, dtype=np.int64)
     n_indet = np.zeros(L, dtype=np.int64)
+    log_evidence = np.full(L, -np.inf, dtype=np.float64)
+    cum_log_ev = 0.0
     all_idx = np.arange(N)
 
     for w in range(L):
@@ -451,6 +459,7 @@ def _pmo_delay_realtime(
         if w == 0:
             n_matches[0] = N
             n_distinct[0] = N
+            log_evidence[0] = 0.0  # D_0 is the conditioning event, not evidence
         else:
             match_idx = np.where(onset[:, w] == obs[w])[0]
             n_matches[w] = match_idx.size
@@ -462,6 +471,9 @@ def _pmo_delay_realtime(
                     stacklevel=2,
                 )
                 break
+            # SMC evidence increment: p(D_w | D_0..D_{w-1}) ~= n_matches / N.
+            cum_log_ev += float(np.log(match_idx.size / N))
+            log_evidence[w] = cum_log_ev
             chosen = rng.choice(match_idx, size=N, replace=True)
             onset = onset[chosen]
             Y = Y[chosen]
@@ -514,7 +526,13 @@ def _pmo_delay_realtime(
             "unresolved; raise t_max.",
             stacklevel=2,
         )
-    return {"pmo": pmo, "n_matches": n_matches, "n_distinct": n_distinct, "n_indet": n_indet}
+    return {
+        "pmo": pmo,
+        "n_matches": n_matches,
+        "n_distinct": n_distinct,
+        "n_indet": n_indet,
+        "log_evidence": log_evidence,
+    }
 
 
 # ---------------------------------------------------------------------------

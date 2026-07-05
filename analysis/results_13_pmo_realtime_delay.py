@@ -24,6 +24,7 @@ from analysis_defaults import (
     DELAY_TOST_SD,
     FIG13_N_PARTICLES,
     FIG13_ONSET_DATES,
+    FIG13_PRIOR_SSE,
     RESULTS_DIR,
     SIM_SEED,
     SIM_T_MAX,
@@ -38,6 +39,30 @@ from sse_ssi_pmo import (
 
 R0: float = DEFAULT_R0
 K: float = DEFAULT_K
+PRIOR_SSE: float = FIG13_PRIOR_SSE
+
+
+def model_average(
+    log_ev_sse: np.ndarray,
+    log_ev_ssi: np.ndarray,
+    pmo_sse: np.ndarray,
+    pmo_ssi: np.ndarray,
+    prior_sse: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Posterior SSE probability and model-averaged PMO from per-model log evidence.
+
+    ``posterior_sse = prior_sse L_sse / (prior_sse L_sse + prior_ssi L_ssi)``,
+    computed in log space; the ensemble PMO is the posterior-weighted mean of
+    the per-model PMOs.
+    """
+    log_w_sse = np.log(prior_sse) + log_ev_sse
+    log_w_ssi = np.log(1.0 - prior_sse) + log_ev_ssi
+    m = np.maximum(log_w_sse, log_w_ssi)
+    w_sse = np.exp(log_w_sse - m)
+    w_ssi = np.exp(log_w_ssi - m)
+    post_sse = w_sse / (w_sse + w_ssi)
+    ensemble_pmo = post_sse * pmo_sse + (1.0 - post_sse) * pmo_ssi
+    return post_sse, ensemble_pmo
 
 
 def weekly_onsets(date_strings: list[str]) -> tuple[np.ndarray, list[str]]:
@@ -92,6 +117,11 @@ def main() -> None:
         rng=rng,
     )
 
+    # Bayesian model average (SSE + SSI) from the particle-filter log evidence.
+    post_sse, ensemble_pmo = model_average(
+        sse.log_evidence, ssi.log_evidence, sse.pmo, ssi.pmo, PRIOR_SSE
+    )
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RESULTS_DIR / "fig13_pmo_realtime_delay.csv"
     df = pd.DataFrame(
@@ -101,6 +131,9 @@ def main() -> None:
             "cases": counts,
             "sse_delay_pmo": sse.pmo,
             "ssi_delay_pmo": ssi.pmo,
+            "ensemble_pmo": ensemble_pmo,
+            "post_sse": post_sse,
+            "post_ssi": 1.0 - post_sse,
             "sse_n_distinct": sse.n_distinct,
             "ssi_n_distinct": ssi.n_distinct,
         }

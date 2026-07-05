@@ -144,3 +144,4 @@ FIG13_ONSET_DATES: list[str] = [
     "11/05/2017",
 ]
 FIG13_N_PARTICLES: int = 50_000  # bootstrap particle-filter population size
+FIG13_PRIOR_SSE: float = 0.5  # prior probability of the SSE model (SSI = 1 - this)

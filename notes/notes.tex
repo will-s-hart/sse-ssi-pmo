@@ -1379,7 +1379,14 @@ by the state carried in each particle, so conditioning on it requires no fresh
 simulation; the retained particles then represent the distribution of the latent
 state given the onsets to week $t$, and simulating each forward freely to
 resolution yields the probability of a major outbreak conditional on the history
-observed so far.
+observed so far.  The same filter also estimates the marginal likelihood
+$L_M(I_{1:t} \mid I_0)$ of \S\ref{sec:pmo_uncertain}: the average matching
+fraction at each week is the standard sequential Monte Carlo estimate of the
+one-step predictive probability $\mathbb{P}_M(I_w \mid I_{0:w-1})$, and the
+product over weeks gives $L_M$.  Feeding these per-model evidences through
+\eqref{eq:pi_post_general}--\eqref{eq:pmo_avg_general} produces the posterior
+model probabilities and the model-averaged probability of a major outbreak,
+tracked in real time as the outbreak unfolds.
 
 \paragraph{Reporting delays (future extension).}
 A natural refinement retains this onset process model but adds a reporting

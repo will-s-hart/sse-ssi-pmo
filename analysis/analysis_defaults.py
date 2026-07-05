@@ -129,11 +129,20 @@ FIG11_R_MAX: int = FIG1_R_MAX
 # --- figure 12 (onset-anchored PMO comparison across histories) ---
 FIG12_HISTORIES: list[list[int]] = FIG4_HISTORIES
 
-# --- figure 13 (real-time onset-anchored PMO over a real EVD outbreak) ---
+# --- figure 13 (real-time onset-anchored PMO over a simulated SSI outbreak) ---
+# A weekly onset history simulated from the *SSI* model (the true model) with the
+# default parameters; the real-time model averaging should recover SSI as the
+# weeks accumulate. FIG13_SIM_SEED selects a realisation that survives several
+# weeks and stays within the particle filter's exact-match range.
+FIG13_SIM_SEED: int = 46
+FIG13_N_PARTICLES: int = 50_000  # bootstrap particle-filter population size
+FIG13_PRIOR_SSE: float = 0.5  # prior probability of the SSE model (SSI = 1 - this)
+
+# --- figure 14 (real-time onset-anchored PMO over a real EVD outbreak) ---
 # Symptom-onset dates (dd/mm/yyyy) for the 2017 Likati (Bas-Uele, DRC) EVD
 # outbreak; binned into calendar (Mon-Sun) weeks. PMO at each week conditions
 # on the onset history observed up to that week.
-FIG13_ONSET_DATES: list[str] = [
+FIG14_ONSET_DATES: list[str] = [
     "27/03/2017",
     "18/04/2017",
     "24/04/2017",
@@ -143,5 +152,5 @@ FIG13_ONSET_DATES: list[str] = [
     "02/05/2017",
     "11/05/2017",
 ]
-FIG13_N_PARTICLES: int = 50_000  # bootstrap particle-filter population size
-FIG13_PRIOR_SSE: float = 0.5  # prior probability of the SSE model (SSI = 1 - this)
+FIG14_N_PARTICLES: int = 50_000  # bootstrap particle-filter population size
+FIG14_PRIOR_SSE: float = 0.5  # prior probability of the SSE model (SSI = 1 - this)

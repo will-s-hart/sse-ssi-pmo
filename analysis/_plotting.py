@@ -82,7 +82,15 @@ def _cases_axis(ax_left: Axes, weeks: NDArray, cases: NDArray) -> Axes:
 
 
 def realtime_two_panel(
-    df: pd.DataFrame, *, title: str, xtick_labels: list[str], prior_sse: float
+    df: pd.DataFrame,
+    *,
+    title: str,
+    xtick_labels: list[str],
+    prior_sse: float,
+    highlight_week: int | None = None,
+    highlight_label: str | None = None,
+    pmo_legend_loc: str = "upper left",
+    post_legend_loc: str = "upper left",
 ) -> Figure:
     """Two-panel real-time onset-anchored PMO figure (shared by the delay figures).
 
@@ -91,7 +99,9 @@ def realtime_two_panel(
     panel shows the real-time PMO of the SSE/SSI models and their Bayesian model
     average (left axis) with the weekly onset epi curve on a twin right axis; the
     bottom panel shows the posterior model probabilities with the same epi-curve
-    underlay. Returns the Figure.
+    underlay. ``highlight_week`` optionally marks a week (e.g. a response /
+    decision point) with a vertical line on both panels, labelled
+    ``highlight_label``. Returns the Figure.
     """
     weeks = df["week"].to_numpy()
     cases = df["cases"].to_numpy()
@@ -134,7 +144,7 @@ def realtime_two_panel(
     ax_pmo_cases = _cases_axis(ax_pmo, weeks, cases)
     h1, l1 = ax_pmo.get_legend_handles_labels()
     h2, l2 = ax_pmo_cases.get_legend_handles_labels()
-    ax_pmo.legend(h1 + h2, l1 + l2, loc="upper left", ncol=2)
+    ax_pmo.legend(h1 + h2, l1 + l2, loc=pmo_legend_loc, ncol=2)
     ax_pmo.set_title(title)
 
     # Bottom: posterior model probabilities (left) + epi curve (right).
@@ -161,8 +171,24 @@ def realtime_two_panel(
     ax_post.set_ylim(0, 1)
     ax_post.grid(True, axis="y", alpha=0.3)
     _cases_axis(ax_post, weeks, cases)
-    ax_post.legend(loc="upper left", ncol=2)
+    ax_post.legend(loc=post_legend_loc, ncol=2)
     ax_post.set_xlabel("Week of outbreak")
     ax_post.set_xticks(weeks)
     ax_post.set_xticklabels(xtick_labels)
+
+    if highlight_week is not None:
+        for ax in (ax_pmo, ax_post):
+            ax.axvline(highlight_week, color="0.3", linestyle="-.", linewidth=1.5, zorder=2)
+        if highlight_label:
+            ax_post.annotate(
+                highlight_label,
+                xy=(highlight_week, 0.5),
+                xytext=(5, 0),
+                textcoords="offset points",
+                va="center",
+                ha="left",
+                fontsize=9,
+                color="0.3",
+                bbox={"boxstyle": "round", "fc": "white", "ec": "none", "alpha": 0.7},
+            )
     return fig

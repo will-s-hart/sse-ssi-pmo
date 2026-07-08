@@ -59,7 +59,8 @@ res11 = "python analysis/results_11_pmo_vs_r_delay.py"
 res12 = "python analysis/results_12_pmo_comparison_delay.py"
 res13 = "python analysis/results_13_pmo_realtime_sim.py"
 res14 = "python analysis/results_14_pmo_realtime_likati.py"
-results = { depends-on = ["res1", "res2", "res3", "res4", "res5", "res6", "res7", "res8", "res9", "res10", "res11", "res12", "res13", "res14"] }
+res15 = "python analysis/results_15_pmo_realtime_equateur.py"
+results = { depends-on = ["res1", "res2", "res3", "res4", "res5", "res6", "res7", "res8", "res9", "res10", "res11", "res12", "res13", "res14", "res15"] }
 fig1 = "python analysis/figure_1_pmo_vs_r.py"
 fig2 = "python analysis/figure_2_pmo_vs_R0.py"
 fig3 = "python analysis/figure_3_pmo_vs_k.py"
@@ -74,7 +75,8 @@ fig11 = "python analysis/figure_11_pmo_vs_r_delay.py"
 fig12 = "python analysis/figure_12_pmo_comparison_delay.py"
 fig13 = "python analysis/figure_13_pmo_realtime_sim.py"
 fig14 = "python analysis/figure_14_pmo_realtime_likati.py"
-figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5", "fig6", "fig7", "fig8", "fig9", "fig10", "fig11", "fig12", "fig13", "fig14"] }
+fig15 = "python analysis/figure_15_pmo_realtime_equateur.py"
+figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5", "fig6", "fig7", "fig8", "fig9", "fig10", "fig11", "fig12", "fig13", "fig14", "fig15"] }
 
 # ---------------------------------------------------------------------------
 # ruff

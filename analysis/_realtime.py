@@ -7,10 +7,30 @@ onset history and Bayesian-average them; this module holds that shared logic.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from datetime import date, timedelta
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from sse_ssi_pmo import pmo_sse_delay_realtime, pmo_ssi_delay_realtime
+
+
+def bin_calendar_weeks(dates: Iterable[date]) -> tuple[NDArray[np.int64], list[str]]:
+    """Bin dates into calendar (Mon-Sun) weeks from the first date's Monday.
+
+    Returns ``(counts, week_starts)`` where ``counts[w]`` is the number of dates
+    in week ``w`` (week 0 = the calendar week of the earliest date) and
+    ``week_starts[w]`` is that week's Monday formatted ``dd/mm``.
+    """
+    sorted_dates = sorted(dates)
+    mondays = [d - timedelta(days=d.weekday()) for d in sorted_dates]
+    first_monday = mondays[0]
+    week_idx = [(m - first_monday).days // 7 for m in mondays]
+    n_weeks = week_idx[-1] + 1
+    counts = np.bincount(week_idx, minlength=n_weeks).astype(np.int64)
+    week_starts = [(first_monday + timedelta(weeks=w)).strftime("%d/%m") for w in range(n_weeks)]
+    return counts, week_starts
 
 
 def model_average(

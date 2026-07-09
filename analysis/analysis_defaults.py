@@ -166,3 +166,13 @@ FIG15_DATA_FILE: str = "equateur_2020_reported.csv"
 FIG15_RESPONSE_WEEK: int = 4  # calendar week containing the 1 Jun 2020 declaration
 FIG15_N_PARTICLES: int = 100_000  # larger population (weekly counts reach the teens)
 FIG15_PRIOR_SSE: float = 0.5  # prior probability of the SSE model (SSI = 1 - this)
+
+# --- figure 16 (real-time onset-anchored PMO over the 2018 Equateur outbreak) ---
+# Daily disease-incidence series for the 2018 Equateur (DRC) EVD outbreak
+# (committed CSV, one row per day from the first case on 5 Apr 2018), converted
+# to calendar (Mon-Sun) weeks. The response team arrived on 8 May 2018 (week 5
+# here), marked as the response/decision point.
+FIG16_DATA_FILE: str = "equateur_2018_incidence.csv"
+FIG16_RESPONSE_WEEK: int = 5  # calendar week containing the 8 May 2018 response arrival
+FIG16_N_PARTICLES: int = 200_000  # weekly counts reach the teens
+FIG16_PRIOR_SSE: float = 0.5  # prior probability of the SSE model (SSI = 1 - this)

@@ -1,11 +1,13 @@
-"""Compute and save results for Figure 16: real-time PMO, 2018 Equateur outbreak.
+"""Compute and save results for Figure 16: real-time PMO, 2020 Equateur outbreak.
 
-Daily disease-incidence series for the 2018 Equateur (DRC) EVD outbreak
-(committed CSV, one row per day from the first case on 5 Apr 2018) is converted
-to calendar (Mon-Sun) weeks. For each week we estimate, via a bootstrap particle
-filter, the probability of a major outbreak and the posterior SSE/SSI model
-probabilities given the history observed up to that week, plus their Bayesian
-model average (prior 0.5 each).
+Case line list for the 2020 Equateur (DRC) EVD outbreak (committed CSV of
+reported dates in analysis/data/) is binned into calendar (Mon-Sun) weeks. For
+each week we estimate, via a bootstrap particle filter, the probability of a
+major outbreak and the posterior SSE/SSI model probabilities given the history
+observed up to that week, plus their Bayesian model average (prior 0.5 each).
+
+NB the input records are *reporting* dates, used here as a proxy for the
+symptom-onset timeline the model assumes (a reporting delay is not modelled).
 """
 
 from __future__ import annotations
@@ -49,14 +51,9 @@ def main() -> None:
     )
 
     raw = pd.read_csv(DATA_DIR / FIG16_DATA_FILE)
-    # Expand the daily incidence into one date per case, then bin by calendar week.
-    dates = [
-        date.fromisoformat(d)
-        for d, c in zip(raw["date"], raw["incidence"], strict=True)
-        for _ in range(c)
-    ]
+    dates = [date.fromisoformat(s) for s in raw["date_reported"]]
     counts, week_starts = bin_calendar_weeks(dates)
-    print(f"weekly counts: {counts.tolist()} (total {int(counts.sum())} cases)")
+    print(f"weekly reported counts: {counts.tolist()} (total {int(counts.sum())} cases)")
 
     cols = realtime_ensemble(
         counts,
@@ -74,7 +71,7 @@ def main() -> None:
     df = df[["week", "week_start", *[c for c in cols if c != "week"]]]
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = RESULTS_DIR / "fig16_pmo_realtime_equateur2018.csv"
+    out_path = RESULTS_DIR / "fig16_pmo_realtime_equateur2020.csv"
     df.to_csv(out_path, index=False)
     print(df.to_string(index=False))
     print(f"wrote {out_path}")

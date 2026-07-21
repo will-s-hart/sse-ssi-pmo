@@ -82,5 +82,24 @@ FIG10_SIM_N: int = FIG5_SIM_N
 FIG10_SIM_BATCH: int = FIG5_SIM_BATCH
 FIG10_SIM_MAX_ATTEMPTS: int = FIG5_SIM_MAX_ATTEMPTS
 
-# Figures 11 (naive) and 12 (bridge) -- real-time PMO over the 2018 Equateur EVD
-# outbreak -- are added in a later phase alongside their results/figure scripts.
+# --- figures 11 & 12 (real-time PMO over the 2018 Equateur EVD outbreak) ---
+# Both use the committed daily disease-incidence CSV (one row per day from the
+# first case on 5 Apr 2018), converted to calendar (Mon-Sun) weeks. The response
+# team arrived on 8 May 2018 (week 5 here), marked as the decision point.
+EVD2018_DATA_FILE: str = "equateur_2018_incidence.csv"
+EVD2018_RESPONSE_WEEK: int = 5
+
+# figure 11 (naive: case dates taken as infection times; PMO by both a particle
+# filter and the analytic/MCMC machinery, overlaid to validate the filter).
+FIG11_N_PARTICLES: int = 200_000  # weekly counts reach the teens
+FIG11_PRIOR_SSE: float = 0.5
+FIG11_MCMC_DRAWS: int = FIG4_MCMC_DRAWS
+FIG11_MCMC_TUNE: int = FIG4_MCMC_TUNE
+FIG11_MCMC_CHAINS: int = FIG4_MCMC_CHAINS
+
+# figure 12 (bridge: the same generation-time renewal, observed through an
+# independent incubation delay; PMO by particle filter). A single index
+# infection is seeded FIG12_SEED_LEAD weeks before the first observed onset.
+FIG12_N_PARTICLES: int = 200_000
+FIG12_PRIOR_SSE: float = 0.5
+FIG12_SEED_LEAD: int = 1

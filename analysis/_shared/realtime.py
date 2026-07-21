@@ -13,7 +13,15 @@ from datetime import date, timedelta
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from sse_ssi_pmo import pmo_sse_delay_realtime, pmo_ssi_delay_realtime
+from sse_ssi_pmo import (
+    PmoRealtimeResult,
+    pmo_sse_delay_realtime,
+    pmo_sse_incubation_realtime,
+    pmo_sse_realtime,
+    pmo_ssi_delay_realtime,
+    pmo_ssi_incubation_realtime,
+    pmo_ssi_realtime,
+)
 
 
 def bin_calendar_weeks(dates: Iterable[date]) -> tuple[NDArray[np.int64], list[str]]:
@@ -112,3 +120,117 @@ def realtime_ensemble(
         "sse_n_distinct": sse.n_distinct,
         "ssi_n_distinct": ssi.n_distinct,
     }
+
+
+def _ensemble_columns(
+    counts: NDArray[np.int64],
+    sse: PmoRealtimeResult,
+    ssi: PmoRealtimeResult,
+    prior_sse: float,
+) -> dict[str, NDArray]:
+    """Build per-week ensemble columns (generic ``sse_pmo``/``ssi_pmo`` keys)."""
+    post_sse, ensemble_pmo = model_average(
+        sse.log_evidence, ssi.log_evidence, sse.pmo, ssi.pmo, prior_sse
+    )
+    return {
+        "week": np.arange(counts.size),
+        "cases": counts,
+        "sse_pmo": sse.pmo,
+        "ssi_pmo": ssi.pmo,
+        "ensemble_pmo": ensemble_pmo,
+        "post_sse": post_sse,
+        "post_ssi": 1.0 - post_sse,
+        "sse_n_distinct": sse.n_distinct,
+        "ssi_n_distinct": ssi.n_distinct,
+    }
+
+
+def realtime_ensemble_infection(
+    counts: ArrayLike,
+    *,
+    R0: float,
+    k: float,
+    w: ArrayLike,
+    n_particles: int,
+    threshold: int,
+    t_max: int,
+    prior_sse: float,
+    rng: np.random.Generator,
+) -> dict[str, NDArray]:
+    """Naive infection-anchored SSE/SSI real-time particle filters, Bayesian-averaged.
+
+    The observed ``counts`` are treated as weekly *infection* incidence. Returns
+    per-week columns keyed ``sse_pmo``/``ssi_pmo``/``ensemble_pmo``/``post_sse``/
+    ``post_ssi`` (plus diagnostics).
+    """
+    counts_arr = np.asarray(counts, dtype=np.int64)
+    sse = pmo_sse_realtime(
+        R0=R0,
+        k=k,
+        w=w,
+        history=counts_arr,
+        n_particles=n_particles,
+        threshold=threshold,
+        t_max=t_max,
+        rng=rng,
+    )
+    ssi = pmo_ssi_realtime(
+        R0=R0,
+        k=k,
+        w=w,
+        history=counts_arr,
+        n_particles=n_particles,
+        threshold=threshold,
+        t_max=t_max,
+        rng=rng,
+    )
+    return _ensemble_columns(counts_arr, sse, ssi, prior_sse)
+
+
+def realtime_ensemble_bridge(
+    counts: ArrayLike,
+    *,
+    R0: float,
+    k: float,
+    w: ArrayLike,
+    inc: ArrayLike,
+    seed_lead: int,
+    n_particles: int,
+    threshold: int,
+    t_max: int,
+    prior_sse: float,
+    rng: np.random.Generator,
+) -> dict[str, NDArray]:
+    """Bridge-model SSE/SSI real-time particle filters, Bayesian-averaged.
+
+    The observed ``counts`` are weekly *onset* incidence; infections follow the
+    generation-time renewal (``w``) and are observed through an independent
+    incubation delay (``inc``, from lag 0). Same generic column keys as
+    :func:`realtime_ensemble_infection`.
+    """
+    counts_arr = np.asarray(counts, dtype=np.int64)
+    sse = pmo_sse_incubation_realtime(
+        R0=R0,
+        k=k,
+        w=w,
+        inc=inc,
+        history=counts_arr,
+        seed_lead=seed_lead,
+        n_particles=n_particles,
+        threshold=threshold,
+        t_max=t_max,
+        rng=rng,
+    )
+    ssi = pmo_ssi_incubation_realtime(
+        R0=R0,
+        k=k,
+        w=w,
+        inc=inc,
+        history=counts_arr,
+        seed_lead=seed_lead,
+        n_particles=n_particles,
+        threshold=threshold,
+        t_max=t_max,
+        rng=rng,
+    )
+    return _ensemble_columns(counts_arr, sse, ssi, prior_sse)

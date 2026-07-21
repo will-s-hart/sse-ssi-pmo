@@ -57,7 +57,9 @@ base-res7 = "python -m analysis.base.results_7_pmo_ensemble_error"
 base-res8 = "python -m analysis.base.results_8_pmo_uncertain_R0"
 base-res9 = "python -m analysis.base.results_9_pmo_uncertain_combined"
 base-res10 = "python -m analysis.base.results_10_pmo_error_uncertain_R0"
-base-results = { depends-on = ["base-res1", "base-res2", "base-res3", "base-res4", "base-res5", "base-res6", "base-res7", "base-res8", "base-res9", "base-res10"] }
+base-res11 = "python -m analysis.base.results_11_pmo_realtime_naive_evd"
+base-res12 = "python -m analysis.base.results_12_pmo_realtime_bridge_evd"
+base-results = { depends-on = ["base-res1", "base-res2", "base-res3", "base-res4", "base-res5", "base-res6", "base-res7", "base-res8", "base-res9", "base-res10", "base-res11", "base-res12"] }
 base-fig1 = "python -m analysis.base.figure_1_pmo_vs_r"
 base-fig2 = "python -m analysis.base.figure_2_pmo_vs_R0"
 base-fig3 = "python -m analysis.base.figure_3_pmo_vs_k"
@@ -68,7 +70,9 @@ base-fig7 = "python -m analysis.base.figure_7_pmo_ensemble_error"
 base-fig8 = "python -m analysis.base.figure_8_pmo_uncertain_R0"
 base-fig9 = "python -m analysis.base.figure_9_pmo_uncertain_combined"
 base-fig10 = "python -m analysis.base.figure_10_pmo_error_uncertain_R0"
-base-figs = { depends-on = ["base-fig1", "base-fig2", "base-fig3", "base-fig4", "base-fig5", "base-fig6", "base-fig7", "base-fig8", "base-fig9", "base-fig10"] }
+base-fig11 = "python -m analysis.base.figure_11_pmo_realtime_naive_evd"
+base-fig12 = "python -m analysis.base.figure_12_pmo_realtime_bridge_evd"
+base-figs = { depends-on = ["base-fig1", "base-fig2", "base-fig3", "base-fig4", "base-fig5", "base-fig6", "base-fig7", "base-fig8", "base-fig9", "base-fig10", "base-fig11", "base-fig12"] }
 
 # --- delays paper: symptom-onset-anchored models (figures 1-6) ---
 delays-res1 = "python -m analysis.delays.results_1_pmo_vs_r_delay"

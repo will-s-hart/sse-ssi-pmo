@@ -65,12 +65,13 @@ The main branch is protected. Workflow for feature development:
 
 Single flat package; modules are layered to avoid circular imports.
 
-- **`pmo.py`** — public dispatcher API. Five top-level functions: `pmo_sse`, `pmo_ssi`, `pmo_poisson`, `pmo_uncertain`, `pmo_ensemble`. Each takes `R0`, `k`, `w`, `history`, `method`, validates inputs, broadcasts `(R0, k)`, and routes to a private backend. **All user-facing input validation lives here** — private helpers in other modules trust their inputs.
+- **`pmo.py`** — public dispatcher API. Five retrospective functions (`pmo_sse`, `pmo_ssi`, `pmo_poisson`, `pmo_uncertain`, `pmo_ensemble`), plus the onset-anchored `pmo_sse_delay` / `pmo_ssi_delay` and six real-time (per-week particle-filter) functions returning a `PmoRealtimeResult`: `pmo_{sse,ssi}_realtime` (infection-anchored / "naive"), `pmo_{sse,ssi}_incubation_realtime` (generation-time renewal + incubation → onsets, the "bridge"), and `pmo_{sse,ssi}_delay_realtime` (onset-anchored / TOST). Each validates inputs, broadcasts `(R0, k)` (real-time functions are scalar-only), and routes to a private backend. **All user-facing input validation lives here** — private helpers in other modules trust their inputs.
 - **`extinction.py`** — analytic + MCMC PMO backends (`_pmo_sse_analytic`, `_pmo_ssi_analytic`, `_pmo_ssi_mcmc`, `_pmo_poisson_analytic`, `_pmo_uncertain_*`, `_pmo_ensemble_*`). Builds on `likelihood.py` and `_history.py`.
-- **`simulation.py`** — Monte-Carlo backends. Public single-trajectory `simulate_sse/ssi/poisson`; private `_pmo_*_sim*` PMO estimators. SSI uses **shared rejection sampling**: multi-history calls run one batched simulation pass matched against every history, requiring all rows to share the same `I_0`.
+- **`simulation.py`** — infection-anchored Monte-Carlo backends. Public single-trajectory `simulate_sse/ssi/poisson`; private `_pmo_*_sim*` rejection PMO estimators (SSI uses **shared rejection sampling**: one batched pass matched against every history, all rows sharing `I_0`); and the real-time particle filters `_pmo_infection_realtime` (observe infections) and `_pmo_bridge_realtime` (generation-time renewal observed through an incubation delay from lag 0, index seeded before week 0), which share forward resolution (`_resolve_forward_infection`) — a major outbreak/extinction is defined on the infection process.
+- **`simulation_delay.py`** — onset-anchored (TOST + incubation, lag-1) Monte-Carlo backends: `simulate_{sse,ssi}_delay`, rejection PMO `_pmo_*_delay_sim*`, and the onset-anchored real-time particle filter `_pmo_delay_realtime` with pipeline-aware extinction. Both onset models require rejection/PF (observed onsets don't pin the latent pipeline).
 - **`inference.py`** — `fit_sse` / `fit_ssi`: PyMC HMC fits returning an `xr.DataTree`. SSI samples latent infectivities `Y_t` for every day with `I_t > 0` (variable `"infectivity"`). Used by the MCMC PMO/ensemble paths.
 - **`likelihood.py`** — marginal log-likelihoods `log L_M` for Bayesian model averaging. SSE/Poisson closed-form; SSI closed-form for the three "special" history shapes, else MCMC via `"naive"` / `"importance_sampling"` / `"bridge"` (Meng-Wong; the default).
-- **`serial_interval.py`** — `discretise`, `discretise_gamma`, `cumulative` (Cori et al. discretisation).
+- **`serial_interval.py`** — `discretise`, `discretise_gamma`, `cumulative` (Cori et al. discretisation), plus `delay_cdf` / `sample_delay` (inverse-CDF sampling of a discrete delay on `{start, ...}`; shared by the onset-anchored and bridge simulators to avoid an import cycle).
 - **`_history.py`** — `classify_history` (returns `"day0_only" | "one_later" | "two_later" | "general"`) and `w_at`. Shared by `extinction.py` and `likelihood.py`; lives in its own module to break the circular import.
 
 ### Conventions and gotchas
@@ -81,7 +82,8 @@ Single flat package; modules are layered to avoid circular imports.
 - **Analytic SSI / `pmo_uncertain` / `pmo_ensemble` only support three history kinds** (day-0-only, one-later, two-later). For a "general" history use `method='simulation'` or `method='mcmc'`. The dispatcher raises with a pointer to the offending row.
 - **`pmo_poisson` is analytic-only.** For forward Monte-Carlo use `simulate_poisson` directly.
 - **`pmo_ensemble` model specs** are dicts: `{"model": "sse"|"ssi", "R0": float, "k": float}` or `{"model": "poisson", "R0": float}`. `priors` is a length-`len(models)` non-negative simplex.
-- **Ruff ignores `N802/N803/N806`** so mathematical capitalisation (`R0`, `F_r`, `Y`, `Lambda`) matches `notes.tex` — keep that convention rather than renaming.
+- **Ruff ignores `N802/N803/N806/N999`** so mathematical capitalisation (`R0`, `F_r`, `Y`, `Lambda`) matches `notes.tex`, in identifiers *and* module filenames (`figure_2_pmo_vs_R0.py`) — keep that convention rather than renaming.
+- **Real-time functions are scalar-only** (`R0`, `k` scalars) and estimate the *operational* threshold-based PMO per week via a bootstrap particle filter; the retrospective `pmo_*` functions estimate the asymptotic PMO and broadcast over `(R0, k)`. The onset/bridge models observe symptom onsets; the naive/base models observe infections.
 - Private helpers prefixed `_` do **not** validate inputs; that is the dispatcher's job. Don't re-add validation there.
 
 ### `analysis/` — paper figures

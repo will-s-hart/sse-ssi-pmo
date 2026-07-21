@@ -1234,167 +1234,139 @@ the N-model average \(\overline{\mathrm{PMO}}_\mathrm{avg}\) of
 two-model SSE/SSI case of \S~\ref{sec:simulation}.
 
 % ===========================================================================
-\section{Symptom-onset data and delayed transmission}
-\label{sec:onset}
+\section{Real-time monitoring of the probability of a major outbreak}
+\label{sec:realtime}
 % ===========================================================================
 
-The models of \S\ref{sec:models} treat the observed history $I_0, I_1,
-\ldots$ as a record of \emph{infection} times.  In practice surveillance data
-record \emph{symptom onset} times, and transmission is naturally referenced to
-a case's own onset rather than to the (unobserved) moment of infection.  For a
-disease with negligible pre-symptomatic transmission --- Ebola virus disease is
-our motivating example --- we can build a renewal process directly on the onset
-times, driven by the distribution of the \emph{time from symptom onset to
-transmission} (TOST), and connect infections to their eventual onsets through
-an incubation-period distribution.
+The estimators of \S\ref{sec:pmo_uncertain} evaluate the probability of a major
+outbreak retrospectively, conditional on a complete observed history
+$(I_0, \ldots, I_r)$.  When an outbreak is unfolding we instead want this
+probability \emph{sequentially}: at the end of each week~$w$ we condition on the
+incidence observed so far, $(I_0, \ldots, I_w)$, and report the current
+probability of a major outbreak together with the current posterior model
+probabilities.  Re-running the rejection scheme of \S\ref{sec:simulation}
+independently at every horizon is wasteful --- the probability of matching the
+whole history decays rapidly in $w$ --- so we use a bootstrap particle filter
+that reuses the hard-won early-history match.
 
-Let $D_t \geq 0$ denote the number of individuals whose symptoms begin (onset)
-on day $t$; this is the observed quantity.  We introduce two discrete
-distributions on the non-negative integers:
-\begin{itemize}
-  \item the \emph{incubation-period} weights $\iota_a$ for $a = 1, 2, \ldots$,
-    with $\sum_{a \geq 1} \iota_a = 1$, giving the probability that an infected
-    individual develops symptoms $a$ days after infection;
-  \item the \emph{TOST} weights $\tau_s$ for $s = 0, 1, 2, \ldots$, with
-    $\sum_{s \geq 0} \tau_s = 1$, giving the probability that a transmission
-    event occurs $s$ days after the infector's own onset.
-\end{itemize}
-Presymptomatic transmission would place mass on $s < 0$ and is assumed
-negligible here.  The incubation distribution is indexed from $a = 1$ and the
-TOST from $s = 0$; the significance of this asymmetry is discussed below.
+\paragraph{Bootstrap particle filter.}
+Fix a model $M$ and maintain a population of $N$ particles, each carrying the
+latent state needed to propagate the process one step: the recent incidence and,
+for the SSI model, the latent infectivities $(Y_s)$.  Initialise every particle
+at the index case $I_0$.  For $w = 1, 2, \ldots, r$:
+\begin{enumerate}
+  \item \emph{Propagate.}  Advance each particle one week under model $M$'s
+    one-step law, drawing a proposed incidence $\tilde I_w$ from
+    $\mathbb{P}_M(\,\cdot \mid I_{0:w-1})$ given the particle's state (a negative
+    binomial for SSE, a Poisson driven by the sampled infectivities for SSI).
+  \item \emph{Weight and resample.}  Retain the particles with
+    $\tilde I_w = I_w$ and resample $N$ of them with replacement to form the
+    week-$w$ population; discard the rest.
+\end{enumerate}
+The retained particles represent the distribution of the latent state given
+$(I_0, \ldots, I_w)$.  Copying each and simulating it forward freely to
+resolution --- major outbreak or extinction, exactly as in
+\S\ref{sec:simulation} --- estimates $\mathrm{PMO}_M$ conditional on the history
+to week~$w$.
 
-% ---------------------------------------------------------------------------
-\subsection{Onset-anchored SSE and SSI models}
-\label{sec:onset_models}
-% ---------------------------------------------------------------------------
+\paragraph{Sequential evidence and model averaging.}
+The mean matching fraction at week~$w$,
+$\widehat{\mathbb{P}}_M(I_w \mid I_{0:w-1}) = (\text{number retained})/N$, is the
+standard sequential Monte Carlo estimate of the one-step predictive probability,
+and its running product is the marginal likelihood
+$L_M(I_{1:w} \mid I_0) = \prod_{u=1}^{w} \mathbb{P}_M(I_u \mid I_{0:u-1})$ of
+\S\ref{sec:pmo_uncertain}.  Running one filter per candidate model and feeding
+these evidences through
+\eqref{eq:pi_post_general}--\eqref{eq:pmo_avg_general} yields the posterior model
+probabilities $\pi_M^\star$ and the model-averaged probability of a major
+outbreak, each tracked in real time as the outbreak unfolds.
 
-Write $J_t$ for the number of \emph{new infections} generated on day $t$.  The
-force of infection is now the TOST-weighted sum of past \emph{onset} cohorts.
-In the onset-anchored SSE model,
-\begin{equation}\label{eq:onset_sse}
-  \lambda_t = \sum_{s=0}^{\infty} \tau_s\, D_{t-s},
+\begin{remark}
+  For the SSE and Poisson models the observed incidence already determines the
+  force of infection, so a particle carries no hidden state and the filter
+  reduces to reweighting forward simulations; the filter is essential only for
+  the SSI model, whose infectivities $(Y_s)$ remain latent.  In the large-$N$
+  limit the filter and the independent rejection estimator of
+  \S\ref{sec:simulation} coincide; the filter is preferred purely for its
+  efficiency under sequential monitoring.
+\end{remark}
+
+% ===========================================================================
+\section{Symptom-onset data: a generation-time renewal with an incubation delay}
+\label{sec:bridge}
+% ===========================================================================
+
+The models above treat the observed history as a record of \emph{infection}
+times.  Surveillance data instead record \emph{symptom onset} times, which lag
+infection by an incubation period.  A first way to reconcile the two --- and a
+bridge to the fully onset-anchored models developed in the companion notes on
+delayed transmission --- keeps the generation-time renewal of \S\ref{sec:models}
+for the transmission process and treats the incubation period purely as an
+\emph{observation} delay.
+
+Let the \emph{incubation-period} weights $\iota_a$, $a = 1, 2, \ldots$ with
+$\sum_{a \geq 1} \iota_a = 1$, give the probability that an infected individual
+develops symptoms $a$ days after infection.  Write $J_t$ for the number of new
+infections on day~$t$.  Infections are generated exactly as in
+\S\ref{sec:models}: the force of infection is driven by past \emph{infections}
+through the generation-interval weights $w_s$,
+\begin{equation}\label{eq:bridge_foi}
+  \lambda_t = \sum_{s=1}^{\infty} w_s\, J_{t-s}
+  \quad\text{(SSE, Poisson)},
   \qquad
-  J_t \mid \lambda_t \;\sim\;
-  \mathrm{NB}\!\left(\text{mean} = R_0 \lambda_t,\; \text{disp} = k\lambda_t
-  \right).
+  \lambda_t = \sum_{s=1}^{\infty} w_s\, Y_{t-s},
+  \ \ Y_t \mid J_t \sim \mathrm{Gamma}(k J_t, k)
+  \quad\text{(SSI)},
 \end{equation}
-In the onset-anchored SSI model each onset cohort carries an aggregate latent
-infectivity, and infections arise as a Poisson process driven by past
-infectivity,
-\begin{equation}\label{eq:onset_ssi}
-  Y_t \mid D_t \;\sim\; \mathrm{Gamma}\!\left(\text{shape} = k D_t,\;
-  \text{rate} = k\right),
-  \qquad
-  \lambda_t = \sum_{s=0}^{\infty} \tau_s\, Y_{t-s},
-  \qquad
-  J_t \mid \lambda_t \;\sim\; \mathrm{Poisson}\!\left(R_0 \lambda_t\right),
-\end{equation}
-exactly as in \S\ref{sec:ssi} but with the serial-interval weights $w_s$
-replaced by the TOST weights $\tau_s$ and the driving cohorts taken to be
-onsets.  As $k \to \infty$ both reduce to a common onset-anchored Poisson
-model with $J_t \sim \mathrm{Poisson}(R_0 \lambda_t)$ and
-$\lambda_t = \sum_{s \geq 0} \tau_s D_{t-s}$.
-
-Infections are mapped forward to onsets through the incubation period: each of
-the $J_t$ infections on day $t$ independently draws an incubation period
-$A \sim (\iota_a)_{a \geq 1}$ and contributes to the onset cohort on day
-$t + A$.  Equivalently,
-\begin{equation}\label{eq:onset_from_infections}
+with $J_t \mid \lambda_t \sim \mathrm{NB}(\text{mean}=R_0\lambda_t,\
+\text{disp}=k\lambda_t)$ for the SSE model and
+$J_t \mid \lambda_t \sim \mathrm{Poisson}(R_0\lambda_t)$ for the SSI and Poisson
+models --- exactly the models of \S\ref{sec:sse}--\S\ref{sec:poisson} with the
+incidence $I$ relabelled as infections $J$.  Each infection is then mapped
+forward to its symptom onset through an independent incubation period: each of
+the $J_t$ infections on day~$t$ draws $A \sim (\iota_a)_{a\geq1}$ and contributes
+to the observed onset cohort $D_{t+A}$,
+\begin{equation}\label{eq:bridge_onsets}
   D_t = \sum_{a=1}^{\infty} J^{(a)}_{t-a},
   \qquad
-  \bigl(J^{(a)}_{u}\bigr)_{a \geq 1} \,\big|\, J_u \;\sim\;
-  \mathrm{Multinomial}\bigl(J_u,\, (\iota_a)_{a \geq 1}\bigr),
+  \bigl(J^{(a)}_u\bigr)_{a\geq1} \,\big|\, J_u \sim
+  \mathrm{Multinomial}\bigl(J_u,\, (\iota_a)_{a\geq1}\bigr),
 \end{equation}
-where $J^{(a)}_{u}$ is the number of infections on day $u$ whose symptoms begin
-$a$ days later.  The generative process alternates
-$D_t \to \{Y_t\} \to J_t \to D_{>t}$, seeded by a single index case with onset
-on day~0 ($D_0 = 1$).
-
-\paragraph{Indexing convention and causal ordering.}
-Because the incubation weights are supported on $a \geq 1$, an infection on
-day~$t$ cannot produce an onset before day~$t+1$.  Consequently the onset
-cohort $D_t$ --- and, in the SSI model, its infectivity $Y_t$ --- is completely
-determined by infections on days strictly before $t$, so it is fully realised
-before day~$t$'s own transmission is evaluated in
-\eqref{eq:onset_sse}--\eqref{eq:onset_ssi}.  This well-orders the recursion.
-The TOST weights, by contrast, are supported on $s \geq 0$, so a case may
-transmit on its own onset day.  At most one of the two distributions may place
-mass at lag~0: if both did, a chain of same-day infection, onset and
-transmission could occur within a single day and the recursion would no longer
-be well-defined.
+with $J^{(a)}_u$ the number of day-$u$ infections whose symptoms begin $a$ days
+later.  Only the onset counts $D_t$ are observed; the incubation draws are
+independent of the transmission process.
 
 \paragraph{Relationship to the serial interval.}
-Consider an infector with onset on day~$u$.  It transmits on day $u + S$ with
-$S \sim \tau$; the infectee, infected on day $u + S$, has onset on day
-$u + S + A'$ with $A' \sim \iota$.  The onset-to-onset serial interval is
-therefore $S + A'$, distributed as the convolution $\tau * \iota$ with mean
-$\mathbb{E}[\tau] + \mathbb{E}[\iota]$.  Choosing the TOST and incubation means
-so that they sum to the serial-interval mean used in \S\ref{sec:models} yields
-an onset-anchored model that is roughly comparable to the infection-anchored
-models, while making explicit the intermediate onset-to-transmission and
-infection-to-onset delays.
+Here $w_s$ is the \emph{generation} interval, between the infection times of an
+infector and infectee.  An infector infected on day~$u$ has onset on $u + A$; its
+infectee, infected on $u + G$ with $G \sim w$, has onset on $u + G + A'$.  The
+observed onset-to-onset interval is $G + (A' - A)$: the generation interval plus
+the difference of two independent incubation periods, sharing the generation
+interval's mean $\mathbb{E}[w]$ but more dispersed (and possibly negative).
+Fixing $\mathbb{E}[\iota]$ at a plausible incubation period thus leaves the
+transmission dynamics of \S\ref{sec:models} unchanged while rendering the model
+observable through onsets.
 
-% ---------------------------------------------------------------------------
-\subsection{Probability of a major outbreak}
-\label{sec:onset_pmo}
-% ---------------------------------------------------------------------------
+\paragraph{Probability of a major outbreak.}
+Given an observed onset history $D_0, \ldots, D_r$ (with $D_0 \geq 1$), the
+onsets no longer determine the state needed to project forward: at the
+observation horizon a pipeline of infected-but-not-yet-symptomatic individuals,
+and (for SSI) their infectivities, is latent.  We therefore estimate the
+probability of a major outbreak by the particle filter of \S\ref{sec:realtime},
+now matching the observed onset cohorts $D_1, \ldots, D_r$ rather than
+infections.  Because the incubation weights are supported on $a \geq 1$, the
+week-$w$ onset cohort is already determined by each particle's state and can be
+conditioned on without fresh simulation.  Extinction is declared only once no
+infected individuals remain in the incubation pipeline \emph{and} no onsets have
+occurred within the generation-interval support of recent days; tracking the
+pipeline (infections generated minus onsets realised) is necessary because a run
+of zero recent onsets does not preclude onsets already scheduled from earlier
+infections.  The sequential evidence and model averaging of \S\ref{sec:realtime}
+carry over unchanged, giving real-time onset-based monitoring.
 
-Given an observed onset history $D_0, \ldots, D_r$ (with $D_0 \geq 1$), we again
-ask for the probability of a major outbreak.  Unlike the infection-anchored SSE
-model of \S\ref{sec:qr_sse}, the observed onsets do not determine the state
-needed to project the epidemic forward: at the observation horizon there is a
-pipeline of infected-but-not-yet-symptomatic individuals, whose number and
-future onset days are latent, together with (in the SSI model) the latent
-infectivities.  We therefore estimate the probability of a major outbreak by
-the simulation-based rejection scheme of \S\ref{sec:simulation}, applied to the
-onset process: simulate onset trajectories forward from a single index onset on
-day~0, retain those whose onset cohorts on days $1, \ldots, r$ match the
-observed $D_1, \ldots, D_r$, and continue each retained trajectory until it
-either reaches the major-outbreak threshold (a single-day onset count at or
-above the threshold) or goes extinct.  Extinction is declared once no infected
-individuals remain in the incubation pipeline \emph{and} no onsets have occurred
-within the TOST support of recent days, so that no further transmission is
-possible; tracking the pipeline (infections generated minus onsets realised) is
-necessary because a recent run of zero onsets alone does not preclude onsets
-already scheduled from earlier infections.
-
-This scheme applies unchanged to the onset-anchored SSE, SSI and Poisson models.
-Closed-form expressions for the residual extinction probability, analogous to
-those of \S\ref{sec:qr}, are likely tractable --- the SSE and Poisson offspring
-still decompose independently, and the SSI infectivities admit the same
-conditioning arguments --- but are not pursued here; the simulation-based
-estimator suffices for the exploratory comparisons of interest.
-
-\paragraph{Real-time monitoring.}
-Independent rejection sampling becomes inefficient when the probability of a
-major outbreak is required \emph{sequentially}, at each week of an unfolding
-outbreak, since matching the full observed onset history to week $t$ has an
-acceptance probability that decays rapidly in $t$.  A bootstrap particle filter
-is far more efficient: a population of trajectories is advanced one week at a
-time, and at each week the particles whose newly realised onset cohort matches
-the observation are retained and resampled with replacement, so the hard-won
-early-history match is reused rather than re-simulated.  Because the incubation
-delay is at least one time unit, the week-$t$ onset cohort is already determined
-by the state carried in each particle, so conditioning on it requires no fresh
-simulation; the retained particles then represent the distribution of the latent
-state given the onsets to week $t$, and simulating each forward freely to
-resolution yields the probability of a major outbreak conditional on the history
-observed so far.  The same filter also estimates the marginal likelihood
-$L_M(I_{1:t} \mid I_0)$ of \S\ref{sec:pmo_uncertain}: the average matching
-fraction at each week is the standard sequential Monte Carlo estimate of the
-one-step predictive probability $\mathbb{P}_M(I_w \mid I_{0:w-1})$, and the
-product over weeks gives $L_M$.  Feeding these per-model evidences through
-\eqref{eq:pi_post_general}--\eqref{eq:pmo_avg_general} produces the posterior
-model probabilities and the model-averaged probability of a major outbreak,
-tracked in real time as the outbreak unfolds.
-
-\paragraph{Reporting delays (future extension).}
-A natural refinement retains this onset process model but adds a reporting
-delay: at the time of analysis some symptom onsets have not yet been reported,
-so the observed history is a right-truncated and thinned version of the true
-onset history.  The same simulation-based framework accommodates this by
-matching only the reported subset of onsets (or by marginalising over
-unreported recent onsets) when accepting trajectories.  We note it here as a
-direction for future work and do not develop it further.
+The companion notes on delayed transmission develop a fully onset-anchored
+alternative, in which transmission is referenced to the infector's own symptom
+onset --- via a time-from-onset-to-transmission distribution --- rather than to
+their infection time.
 
 \end{document}

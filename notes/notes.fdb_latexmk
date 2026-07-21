@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1784631657.72892 "notes.tex" "notes.pdf" "notes" 1784631658.26953 0
+["pdflatex"] 1784633971.58122 "notes.tex" "notes.pdf" "notes" 1784633972.158 0
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/tcrm1000.tfm" 1136768653 1536 e07581a4bb3136ece9eeb4c3ffab8233 ""
@@ -65,8 +65,8 @@
   "/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1784278164 5573038 b99aad5e4898a9034e953632f940512b ""
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1784278014 3636775 bc1ba322df1064041b4f22dbdefb35cf ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
-  "notes.aux" 1784631658.17548 10628 ac8477d491726c75f4f45ea46d158559 "pdflatex"
-  "notes.tex" 1784631578.75432 64457 9f326866889c2f8dbd5a50f4e2bad9d4 ""
+  "notes.aux" 1784633972.06069 10628 ac8477d491726c75f4f45ea46d158559 "pdflatex"
+  "notes.tex" 1784633932.09991 65018 eb7aa7faa5de2ed4a3f8fb6cd64df7f7 ""
   (generated)
   "notes.aux"
   "notes.log"

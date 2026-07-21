@@ -46,6 +46,7 @@ import warnings
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from sse_ssi_pmo.serial_interval import delay_cdf, sample_delay
 from sse_ssi_pmo.simulation import _rejection_loop, _validate_histories_for_sim
 
 # ---------------------------------------------------------------------------
@@ -75,31 +76,6 @@ def _check_inputs_delay(
         raise ValueError("threshold must be at least 1")
     if t_max < 1:
         raise ValueError("t_max must be at least 1")
-
-
-def _inc_sampler(inc: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
-    """Return ``(cdf, support)`` for inverse-CDF sampling of the incubation period.
-
-    ``support[i] = i + 1`` (incubation indexed from 1); ``cdf`` is the
-    normalised cumulative of ``inc``.
-    """
-    p = inc / inc.sum()
-    cdf = np.cumsum(p)
-    support = np.arange(1, inc.size + 1, dtype=np.int64)
-    return cdf, support
-
-
-def _sample_incubation(
-    cdf: NDArray[np.float64],
-    support: NDArray[np.int64],
-    size: int,
-    rng: np.random.Generator,
-) -> NDArray[np.int64]:
-    """Draw ``size`` incubation periods (>= 1) by inverse-CDF sampling."""
-    u = rng.random(size)
-    idx = np.searchsorted(cdf, u, side="right")
-    np.clip(idx, 0, support.size - 1, out=idx)
-    return support[idx]
 
 
 def _batch_delay(
@@ -143,7 +119,7 @@ def _batch_delay(
 
     L_tost = tost.size
     tost_max = L_tost - 1
-    inc_cdf, inc_support = _inc_sampler(inc)
+    inc_cdf, inc_support = delay_cdf(inc, start=1)
 
     if match_histories is not None:
         if match_histories.ndim != 2:
@@ -226,7 +202,7 @@ def _batch_delay(
         total = int(new_inf.sum())
         if total > 0:
             sim_of_each = np.repeat(idx, new_inf)
-            incs = _sample_incubation(inc_cdf, inc_support, total, rng)
+            incs = sample_delay(inc_cdf, inc_support, total, rng)
             target = t + incs
             in_range = target < t_max
             if in_range.any():
@@ -313,7 +289,7 @@ def _delay_step_inplace(
     total = int(new_inf.sum())
     if total > 0:
         sim_of_each = np.repeat(live_idx, new_inf)
-        incs = _sample_incubation(inc_cdf, inc_support, total, rng)
+        incs = sample_delay(inc_cdf, inc_support, total, rng)
         target = w + incs
         in_range = target < t_max
         if in_range.any():
@@ -436,7 +412,7 @@ def _pmo_delay_realtime(
 
     L = obs.size
     N = n_particles
-    inc_cdf, inc_support = _inc_sampler(inc_arr)
+    inc_cdf, inc_support = delay_cdf(inc_arr, start=1)
     p_nb = k / (k + R0)
 
     onset = np.zeros((N, t_max), dtype=np.int64)

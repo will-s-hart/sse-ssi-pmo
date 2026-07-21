@@ -1304,9 +1304,12 @@ delayed transmission --- keeps the generation-time renewal of \S\ref{sec:models}
 for the transmission process and treats the incubation period purely as an
 \emph{observation} delay.
 
-Let the \emph{incubation-period} weights $\iota_a$, $a = 1, 2, \ldots$ with
-$\sum_{a \geq 1} \iota_a = 1$, give the probability that an infected individual
-develops symptoms $a$ days after infection.  Write $J_t$ for the number of new
+Let the \emph{incubation-period} weights $\iota_a$, $a = 0, 1, 2, \ldots$ with
+$\sum_{a \geq 0} \iota_a = 1$, give the probability that an infected individual
+develops symptoms $a$ days after infection.  A zero incubation ($a = 0$: onset in
+the same week as infection) is permitted here because the generation interval
+carries no lag-0 mass ($w_s$ is supported on $s \geq 1$), so no instantaneous
+infection--onset--transmission loop can arise.  Write $J_t$ for the number of new
 infections on day~$t$.  Infections are generated exactly as in
 \S\ref{sec:models}: the force of infection is driven by past \emph{infections}
 through the generation-interval weights $w_s$,
@@ -1324,13 +1327,13 @@ $J_t \mid \lambda_t \sim \mathrm{Poisson}(R_0\lambda_t)$ for the SSI and Poisson
 models --- exactly the models of \S\ref{sec:sse}--\S\ref{sec:poisson} with the
 incidence $I$ relabelled as infections $J$.  Each infection is then mapped
 forward to its symptom onset through an independent incubation period: each of
-the $J_t$ infections on day~$t$ draws $A \sim (\iota_a)_{a\geq1}$ and contributes
+the $J_t$ infections on day~$t$ draws $A \sim (\iota_a)_{a\geq0}$ and contributes
 to the observed onset cohort $D_{t+A}$,
 \begin{equation}\label{eq:bridge_onsets}
-  D_t = \sum_{a=1}^{\infty} J^{(a)}_{t-a},
+  D_t = \sum_{a=0}^{\infty} J^{(a)}_{t-a},
   \qquad
-  \bigl(J^{(a)}_u\bigr)_{a\geq1} \,\big|\, J_u \sim
-  \mathrm{Multinomial}\bigl(J_u,\, (\iota_a)_{a\geq1}\bigr),
+  \bigl(J^{(a)}_u\bigr)_{a\geq0} \,\big|\, J_u \sim
+  \mathrm{Multinomial}\bigl(J_u,\, (\iota_a)_{a\geq0}\bigr),
 \end{equation}
 with $J^{(a)}_u$ the number of day-$u$ infections whose symptoms begin $a$ days
 later.  Only the onset counts $D_t$ are observed; the incubation draws are
@@ -1349,20 +1352,24 @@ observable through onsets.
 
 \paragraph{Probability of a major outbreak.}
 Given an observed onset history $D_0, \ldots, D_r$ (with $D_0 \geq 1$), the
-onsets no longer determine the state needed to project forward: at the
-observation horizon a pipeline of infected-but-not-yet-symptomatic individuals,
-and (for SSI) their infectivities, is latent.  We therefore estimate the
+onsets do not determine the state needed to project forward: at the observation
+horizon a pipeline of infected-but-not-yet-symptomatic individuals, and (for SSI)
+their infectivities, is latent.  Moreover, because the generation interval is
+supported on $s \geq 1$, an index case seeded in the first observed week could
+not generate an onset until later weeks; we therefore seed a single index
+\emph{infection} one or more weeks before the first observed onset, so that its
+descendants can populate the early observed weeks.  We then estimate the
 probability of a major outbreak by the particle filter of \S\ref{sec:realtime},
-now matching the observed onset cohorts $D_1, \ldots, D_r$ rather than
-infections.  Because the incubation weights are supported on $a \geq 1$, the
-week-$w$ onset cohort is already determined by each particle's state and can be
-conditioned on without fresh simulation.  Extinction is declared only once no
-infected individuals remain in the incubation pipeline \emph{and} no onsets have
-occurred within the generation-interval support of recent days; tracking the
-pipeline (infections generated minus onsets realised) is necessary because a run
-of zero recent onsets does not preclude onsets already scheduled from earlier
-infections.  The sequential evidence and model averaging of \S\ref{sec:realtime}
-carry over unchanged, giving real-time onset-based monitoring.
+matching the observed onset cohorts $D_0, \ldots, D_r$ rather than infections.
+Because the generation interval has no lag-0 mass, each week's onset cohort is
+determined by infections up to that week --- all realised before that week's
+transmission --- so conditioning on it requires no fresh simulation.  A major
+outbreak and extinction are defined on the underlying \emph{infection} process
+exactly as in \S\ref{sec:realtime} (a single-week infection count reaching the
+threshold, or the last $L = \mathrm{len}(w)$ weeks carrying no infections), so
+only the observation step changes; the onsets enter solely through the matching.
+The sequential evidence and model averaging of \S\ref{sec:realtime} carry over
+unchanged, giving real-time onset-based monitoring.
 
 The companion notes on delayed transmission develop a fully onset-anchored
 alternative, in which transmission is referenced to the infector's own symptom

@@ -49,6 +49,7 @@ from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
 from sse_ssi_pmo.priors import Prior
+from sse_ssi_pmo.serial_interval import delay_cdf, sample_delay
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -521,6 +522,376 @@ def _batch_ssi(
 
     matched_history = np.where(alive.any(axis=1), alive.argmax(axis=1), -1).astype(np.int64)
     return major, extinct, matched_history, incidence
+
+
+# ---------------------------------------------------------------------------
+# Real-time PMO via a bootstrap particle filter (private)
+#
+# Two infection-anchored variants:
+#   * ``_pmo_infection_realtime`` -- observed data are infections themselves
+#     ("naive": case dates taken as infection times);
+#   * ``_pmo_bridge_realtime`` -- infections follow the same generation-time
+#     renewal, but are observed only through symptom onsets obtained by an
+#     independent incubation delay (the "bridge" to the onset-anchored models).
+# Both define a major outbreak on the infection process, so their forward
+# resolution is shared (:func:`_resolve_forward_infection`).
+# ---------------------------------------------------------------------------
+
+
+def _infection_step_inplace(
+    model: str,
+    inf: NDArray[np.int64],
+    Y: NDArray[np.float64],
+    d: int,
+    idx: NDArray[np.int64],
+    *,
+    R0: float,
+    k: float,
+    w: NDArray[np.float64],
+    p_nb: float,
+    w_rev_cache: dict[int, NDArray[np.float64]],
+    rng: np.random.Generator,
+) -> NDArray[np.int64]:
+    """Generate day-``d+1`` infections for particles ``idx``, in place.
+
+    ``inf[idx, :d+1]`` (and, for SSI, ``Y``) must be filled. Writes
+    ``inf[idx, d+1]`` and, for SSI, its cohort infectivity ``Y[idx, d+1]``.
+    Returns the new day-``d+1`` infection counts aligned with ``idx``. Same
+    numerics as :func:`_batch_sse`/:func:`_batch_ssi` for scalar ``(R0, k)``.
+    """
+    t = d + 1
+    L_w = w.size
+    L_use = min(t, L_w)
+    if L_use not in w_rev_cache:
+        w_rev_cache[L_use] = w[:L_use][::-1].copy()
+    w_rev = w_rev_cache[L_use]
+    new = np.zeros(idx.size, dtype=np.int64)
+    if model == "sse":
+        foi = inf[idx, t - L_use : t] @ w_rev
+        nz = foi > 0.0
+        if nz.any():
+            new[nz] = rng.negative_binomial(k * foi[nz], p_nb)
+    else:  # ssi
+        foi = R0 * (Y[idx, t - L_use : t] @ w_rev)
+        nz = foi > 0.0
+        if nz.any():
+            new[nz] = rng.poisson(foi[nz])
+    inf[idx, t] = new
+    if model == "ssi":
+        nz_inc = new > 0
+        if nz_inc.any():
+            sel = idx[nz_inc]
+            Y[sel, t] = rng.gamma(k * new[nz_inc], 1.0 / k)
+    return new
+
+
+def _resolve_forward_infection(
+    model: str,
+    inf: NDArray[np.int64],
+    Y: NDArray[np.float64],
+    d_start: int,
+    *,
+    R0: float,
+    k: float,
+    w: NDArray[np.float64],
+    p_nb: float,
+    threshold: int,
+    t_max: int,
+    rng: np.random.Generator,
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Free-forward each particle's infection process from day ``d_start``.
+
+    Steps every particle forward (no history matching) until it reaches the
+    major-outbreak threshold (single-day infections ``>= threshold``) or goes
+    extinct (last ``len(w)`` days of infections all zero). Mutates
+    ``inf``/``Y`` -- pass copies. Returns ``(major, extinct)`` boolean arrays.
+    """
+    n = inf.shape[0]
+    L_w = w.size
+    major = np.zeros(n, dtype=bool)
+    extinct = np.zeros(n, dtype=bool)
+    w_rev_cache: dict[int, NDArray[np.float64]] = {}
+    for t in range(d_start, t_max):
+        live = ~(major | extinct)
+        new_major = live & (inf[:, t] >= threshold)
+        major[new_major] = True
+        live &= ~new_major
+        if not live.any():
+            break
+        ext_start = max(0, t + 1 - L_w)
+        new_extinct = live & (inf[:, ext_start : t + 1].sum(axis=1) == 0)
+        extinct[new_extinct] = True
+        live &= ~new_extinct
+        if not live.any() or t + 1 >= t_max:
+            break
+        _infection_step_inplace(
+            model,
+            inf,
+            Y,
+            t,
+            np.where(live)[0],
+            R0=R0,
+            k=k,
+            w=w,
+            p_nb=p_nb,
+            w_rev_cache=w_rev_cache,
+            rng=rng,
+        )
+    return major, extinct
+
+
+def _pmo_infection_realtime(
+    model: str,
+    R0: float,
+    k: float,
+    w: ArrayLike,
+    observed: ArrayLike,
+    *,
+    n_particles: int,
+    threshold: int,
+    t_max: int,
+    rng: np.random.Generator | None = None,
+) -> dict[str, NDArray]:
+    """Real-time PMO across the weeks of an observed *infection* history.
+
+    Bootstrap particle filter for the infection-anchored SSE/SSI models when the
+    observed history is infection incidence itself (case dates taken as infection
+    times). ``n_particles`` particles are advanced one week at a time; those
+    whose freshly generated incidence matches the observation are kept and
+    resampled. The week-``w`` PMO is the fraction of the resampled population that
+    reaches a major outbreak when simulated forward freely. Returns a dict with
+    ``"pmo"``, ``"n_matches"``, ``"n_distinct"``, ``"n_indet"``, ``"log_evidence"``
+    (each length ``L = len(observed)``); see :class:`PmoRealtimeResult`.
+    """
+    rng = np.random.default_rng() if rng is None else rng
+    w_arr = np.asarray(w, dtype=np.float64)
+    obs = np.asarray(observed, dtype=np.int64)
+    L = obs.size
+    N = n_particles
+    p_nb = k / (k + R0)
+
+    inf = np.zeros((N, t_max), dtype=np.int64)
+    inf[:, 0] = int(obs[0])
+    Y = np.zeros((N, t_max), dtype=np.float64)
+    if model == "ssi":
+        Y[:, 0] = rng.gamma(k * int(obs[0]), 1.0 / k, size=N)
+
+    pmo = np.full(L, np.nan, dtype=np.float64)
+    n_matches = np.zeros(L, dtype=np.int64)
+    n_distinct = np.zeros(L, dtype=np.int64)
+    n_indet = np.zeros(L, dtype=np.int64)
+    log_evidence = np.full(L, -np.inf, dtype=np.float64)
+    cum_log_ev = 0.0
+    all_idx = np.arange(N)
+    w_rev_cache: dict[int, NDArray[np.float64]] = {}
+
+    for wk in range(L):
+        if wk == 0:
+            n_matches[0] = N
+            n_distinct[0] = N
+            log_evidence[0] = 0.0
+        else:
+            match_idx = np.where(inf[:, wk] == obs[wk])[0]
+            n_matches[wk] = match_idx.size
+            if match_idx.size == 0:
+                warnings.warn(
+                    f"real-time PMO particle filter collapsed at week {wk} "
+                    f"(no particle matched incidence={obs[wk]}); PMO is NaN from week {wk}. "
+                    "Increase n_particles.",
+                    stacklevel=2,
+                )
+                break
+            cum_log_ev += float(np.log(match_idx.size / N))
+            log_evidence[wk] = cum_log_ev
+            chosen = rng.choice(match_idx, size=N, replace=True)
+            inf = inf[chosen]
+            Y = Y[chosen]
+            n_distinct[wk] = int(np.unique(chosen).size)
+
+        major, extinct = _resolve_forward_infection(
+            model,
+            inf.copy(),
+            Y.copy(),
+            wk,
+            R0=R0,
+            k=k,
+            w=w_arr,
+            p_nb=p_nb,
+            threshold=threshold,
+            t_max=t_max,
+            rng=rng,
+        )
+        resolved = major | extinct
+        n_indet[wk] = int((~resolved).sum())
+        n_res = int(resolved.sum())
+        pmo[wk] = float(major.sum()) / n_res if n_res else np.nan
+
+        if wk < L - 1:
+            _infection_step_inplace(
+                model,
+                inf,
+                Y,
+                wk,
+                all_idx,
+                R0=R0,
+                k=k,
+                w=w_arr,
+                p_nb=p_nb,
+                w_rev_cache=w_rev_cache,
+                rng=rng,
+            )
+
+    if int(n_indet.sum()) > 0:
+        warnings.warn(
+            f"{int(n_indet.sum())} forward sims across weeks hit t_max={t_max} "
+            "unresolved; raise t_max.",
+            stacklevel=2,
+        )
+    return {
+        "pmo": pmo,
+        "n_matches": n_matches,
+        "n_distinct": n_distinct,
+        "n_indet": n_indet,
+        "log_evidence": log_evidence,
+    }
+
+
+def _pmo_bridge_realtime(
+    model: str,
+    R0: float,
+    k: float,
+    w: ArrayLike,
+    inc: ArrayLike,
+    observed: ArrayLike,
+    *,
+    seed_lead: int = 1,
+    n_particles: int,
+    threshold: int,
+    t_max: int,
+    rng: np.random.Generator | None = None,
+) -> dict[str, NDArray]:
+    """Real-time PMO over an observed *onset* history under the bridge model.
+
+    Infections follow the same generation-time renewal as
+    :func:`_pmo_infection_realtime` (weights ``w``, lag >= 1), but are observed
+    only through symptom onsets: each infection is scattered forward by an
+    independent incubation delay ``inc`` (indexed from lag 0). A single index
+    infection is seeded ``seed_lead`` weeks *before* the first observed onset, so
+    its descendants can populate the early observed weeks (with a lag-1 renewal
+    an index seeded at the first observed week could not). The particle filter
+    matches the observed onset cohorts; a major outbreak is defined on the
+    infection process (as in the naive variant), so forward resolution is shared.
+
+    Returns a dict with ``"pmo"``, ``"n_matches"``, ``"n_distinct"``,
+    ``"n_indet"``, ``"log_evidence"`` (each length ``L = len(observed)``).
+    """
+    rng = np.random.default_rng() if rng is None else rng
+    w_arr = np.asarray(w, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    obs = np.asarray(observed, dtype=np.int64)
+    n = obs.size
+    N = n_particles
+    p_nb = k / (k + R0)
+    inc_cdf, inc_support = delay_cdf(inc_arr, start=0)  # incubation allowed from lag 0
+    d_end = seed_lead + n - 1
+    if d_end >= t_max:
+        raise ValueError("t_max too small for seed_lead + len(observed)")
+
+    inf = np.zeros((N, t_max), dtype=np.int64)
+    inf[:, 0] = 1  # single index infection, seed_lead weeks before the first onset
+    Y = np.zeros((N, t_max), dtype=np.float64)
+    if model == "ssi":
+        Y[:, 0] = rng.gamma(k * 1.0, 1.0 / k, size=N)
+    onset = np.zeros((N, t_max), dtype=np.int64)
+    # scatter the index case's own onset (incubation from lag 0)
+    incs0 = sample_delay(inc_cdf, inc_support, N, rng)
+    in_range0 = incs0 < t_max
+    np.add.at(onset, (np.arange(N)[in_range0], incs0[in_range0]), 1)
+
+    pmo = np.full(n, np.nan, dtype=np.float64)
+    n_matches = np.zeros(n, dtype=np.int64)
+    n_distinct = np.zeros(n, dtype=np.int64)
+    n_indet = np.zeros(n, dtype=np.int64)
+    log_evidence = np.full(n, -np.inf, dtype=np.float64)
+    cum_log_ev = 0.0
+    all_idx = np.arange(N)
+    w_rev_cache: dict[int, NDArray[np.float64]] = {}
+
+    for d in range(d_end + 1):
+        if d >= seed_lead:
+            j = d - seed_lead
+            match_idx = np.where(onset[:, d] == obs[j])[0]
+            n_matches[j] = match_idx.size
+            if match_idx.size == 0:
+                warnings.warn(
+                    f"real-time PMO particle filter collapsed at week {j} "
+                    f"(no particle matched onsets={obs[j]}); PMO is NaN from week {j}. "
+                    "Increase n_particles or seed_lead.",
+                    stacklevel=2,
+                )
+                break
+            cum_log_ev += float(np.log(match_idx.size / N))
+            log_evidence[j] = cum_log_ev
+            chosen = rng.choice(match_idx, size=N, replace=True)
+            inf = inf[chosen]
+            Y = Y[chosen]
+            onset = onset[chosen]
+            n_distinct[j] = int(np.unique(chosen).size)
+
+            major, extinct = _resolve_forward_infection(
+                model,
+                inf.copy(),
+                Y.copy(),
+                d,
+                R0=R0,
+                k=k,
+                w=w_arr,
+                p_nb=p_nb,
+                threshold=threshold,
+                t_max=t_max,
+                rng=rng,
+            )
+            resolved = major | extinct
+            n_indet[j] = int((~resolved).sum())
+            n_res = int(resolved.sum())
+            pmo[j] = float(major.sum()) / n_res if n_res else np.nan
+
+        if d < d_end:
+            new = _infection_step_inplace(
+                model,
+                inf,
+                Y,
+                d,
+                all_idx,
+                R0=R0,
+                k=k,
+                w=w_arr,
+                p_nb=p_nb,
+                w_rev_cache=w_rev_cache,
+                rng=rng,
+            )
+            total = int(new.sum())
+            if total > 0:
+                sim_of_each = np.repeat(all_idx, new)
+                incs = sample_delay(inc_cdf, inc_support, total, rng)
+                target = (d + 1) + incs
+                in_range = target < t_max
+                if in_range.any():
+                    np.add.at(onset, (sim_of_each[in_range], target[in_range]), 1)
+
+    if int(n_indet.sum()) > 0:
+        warnings.warn(
+            f"{int(n_indet.sum())} forward sims across weeks hit t_max={t_max} "
+            "unresolved; raise t_max.",
+            stacklevel=2,
+        )
+    return {
+        "pmo": pmo,
+        "n_matches": n_matches,
+        "n_distinct": n_distinct,
+        "n_indet": n_indet,
+        "log_evidence": log_evidence,
+    }
 
 
 # ---------------------------------------------------------------------------

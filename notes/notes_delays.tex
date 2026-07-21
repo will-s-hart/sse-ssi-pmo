@@ -42,8 +42,12 @@ infectiousness.
 
 As in \S\ref{sec:bridge} let $D_t \geq 0$ be the number of symptom onsets on
 day~$t$ (the observed quantity) and $J_t$ the number of new infections on
-day~$t$, with the incubation weights $\iota_a$ ($a \geq 1$) mapping infections
-forward to onsets through the multinomial split \eqref{eq:bridge_onsets}.  In
+day~$t$, with the incubation period of \S\ref{sec:bridge} mapping infections
+forward to onsets through the multinomial split \eqref{eq:bridge_onsets}.  Here,
+unlike the bridge model, the incubation weights are restricted to $a \geq 1$
+(no lag-0 mass): as the causal-ordering remark below explains, at most one of the
+incubation and TOST distributions may place mass at lag~0, and here it is the
+TOST.  In
 place of the generation interval we introduce the \emph{time from symptom onset
 to transmission} (TOST) weights $\tau_s$, $s = 0, 1, 2, \ldots$ with
 $\sum_{s \geq 0} \tau_s = 1$, giving the probability that a transmission event

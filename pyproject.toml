@@ -45,28 +45,54 @@ default = { features = ["dev"] }
 lint = "ruff check src analysis"
 fmt = "ruff format src analysis"
 typecheck = "env -u VIRTUAL_ENV ty check src analysis"
-res1 = "python analysis/results_1_pmo_vs_r.py"
-res2 = "python analysis/results_2_pmo_vs_R0.py"
-res3 = "python analysis/results_3_pmo_vs_k.py"
-res4 = "python analysis/results_4_pmo_comparison.py"
-res5 = "python analysis/results_5_pmo_uncertain.py"
-res6 = "python analysis/results_6_pmo_error.py"
-res7 = "python analysis/results_7_pmo_ensemble_error.py"
-res8 = "python analysis/results_8_pmo_uncertain_R0.py"
-res9 = "python analysis/results_9_pmo_uncertain_combined.py"
-res10 = "python analysis/results_10_pmo_error_uncertain_R0.py"
-results = { depends-on = ["res1", "res2", "res3", "res4", "res5", "res6", "res7", "res8", "res9", "res10"] }
-fig1 = "python analysis/figure_1_pmo_vs_r.py"
-fig2 = "python analysis/figure_2_pmo_vs_R0.py"
-fig3 = "python analysis/figure_3_pmo_vs_k.py"
-fig4 = "python analysis/figure_4_pmo_comparison.py"
-fig5 = "python analysis/figure_5_pmo_uncertain.py"
-fig6 = "python analysis/figure_6_pmo_error.py"
-fig7 = "python analysis/figure_7_pmo_ensemble_error.py"
-fig8 = "python analysis/figure_8_pmo_uncertain_R0.py"
-fig9 = "python analysis/figure_9_pmo_uncertain_combined.py"
-fig10 = "python analysis/figure_10_pmo_error_uncertain_R0.py"
-figs = { depends-on = ["fig1", "fig2", "fig3", "fig4", "fig5", "fig6", "fig7", "fig8", "fig9", "fig10"] }
+
+# --- base paper: infection-anchored PMO (figures 1-12) ---
+base-res1 = "python -m analysis.base.results_1_pmo_vs_r"
+base-res2 = "python -m analysis.base.results_2_pmo_vs_R0"
+base-res3 = "python -m analysis.base.results_3_pmo_vs_k"
+base-res4 = "python -m analysis.base.results_4_pmo_comparison"
+base-res5 = "python -m analysis.base.results_5_pmo_uncertain"
+base-res6 = "python -m analysis.base.results_6_pmo_error"
+base-res7 = "python -m analysis.base.results_7_pmo_ensemble_error"
+base-res8 = "python -m analysis.base.results_8_pmo_uncertain_R0"
+base-res9 = "python -m analysis.base.results_9_pmo_uncertain_combined"
+base-res10 = "python -m analysis.base.results_10_pmo_error_uncertain_R0"
+base-res11 = "python -m analysis.base.results_11_pmo_realtime_naive_evd"
+base-res12 = "python -m analysis.base.results_12_pmo_realtime_bridge_evd"
+base-results = { depends-on = ["base-res1", "base-res2", "base-res3", "base-res4", "base-res5", "base-res6", "base-res7", "base-res8", "base-res9", "base-res10", "base-res11", "base-res12"] }
+base-fig1 = "python -m analysis.base.figure_1_pmo_vs_r"
+base-fig2 = "python -m analysis.base.figure_2_pmo_vs_R0"
+base-fig3 = "python -m analysis.base.figure_3_pmo_vs_k"
+base-fig4 = "python -m analysis.base.figure_4_pmo_comparison"
+base-fig5 = "python -m analysis.base.figure_5_pmo_uncertain"
+base-fig6 = "python -m analysis.base.figure_6_pmo_error"
+base-fig7 = "python -m analysis.base.figure_7_pmo_ensemble_error"
+base-fig8 = "python -m analysis.base.figure_8_pmo_uncertain_R0"
+base-fig9 = "python -m analysis.base.figure_9_pmo_uncertain_combined"
+base-fig10 = "python -m analysis.base.figure_10_pmo_error_uncertain_R0"
+base-fig11 = "python -m analysis.base.figure_11_pmo_realtime_naive_evd"
+base-fig12 = "python -m analysis.base.figure_12_pmo_realtime_bridge_evd"
+base-figs = { depends-on = ["base-fig1", "base-fig2", "base-fig3", "base-fig4", "base-fig5", "base-fig6", "base-fig7", "base-fig8", "base-fig9", "base-fig10", "base-fig11", "base-fig12"] }
+
+# --- delays paper: symptom-onset-anchored models (figures 1-6) ---
+delays-res1 = "python -m analysis.delays.results_1_pmo_vs_r_delay"
+delays-res2 = "python -m analysis.delays.results_2_pmo_comparison_delay"
+delays-res3 = "python -m analysis.delays.results_3_pmo_realtime_sim"
+delays-res4 = "python -m analysis.delays.results_4_pmo_realtime_likati"
+delays-res5 = "python -m analysis.delays.results_5_pmo_realtime_equateur2018"
+delays-res6 = "python -m analysis.delays.results_6_pmo_realtime_equateur2020"
+delays-results = { depends-on = ["delays-res1", "delays-res2", "delays-res3", "delays-res4", "delays-res5", "delays-res6"] }
+delays-fig1 = "python -m analysis.delays.figure_1_pmo_vs_r_delay"
+delays-fig2 = "python -m analysis.delays.figure_2_pmo_comparison_delay"
+delays-fig3 = "python -m analysis.delays.figure_3_pmo_realtime_sim"
+delays-fig4 = "python -m analysis.delays.figure_4_pmo_realtime_likati"
+delays-fig5 = "python -m analysis.delays.figure_5_pmo_realtime_equateur2018"
+delays-fig6 = "python -m analysis.delays.figure_6_pmo_realtime_equateur2020"
+delays-figs = { depends-on = ["delays-fig1", "delays-fig2", "delays-fig3", "delays-fig4", "delays-fig5", "delays-fig6"] }
+
+# --- aggregates across both papers ---
+results = { depends-on = ["base-results", "delays-results"] }
+figs = { depends-on = ["base-figs", "delays-figs"] }
 
 # ---------------------------------------------------------------------------
 # ruff
@@ -79,5 +105,6 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 # N802/N803/N806: lower_case function / argument / variable names. R0,
 # F_r, k, Y, _log_lik_given_Y, _broadcast_R0_k follow the mathematical
-# notation in notes.tex, so we keep the capitalisation.
-ignore = ["N802", "N803", "N806"]
+# notation in notes.tex, so we keep the capitalisation. N999: module
+# filenames such as figure_2_pmo_vs_R0.py keep the same R0 capitalisation.
+ignore = ["N802", "N803", "N806", "N999"]

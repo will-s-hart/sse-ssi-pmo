@@ -90,3 +90,40 @@ def cumulative(w: NDArray[np.float64]) -> NDArray[np.float64]:
     ``F[r] = sum(w[:r])``.
     """
     return np.concatenate(([0.0], np.cumsum(w)))
+
+
+# ---------------------------------------------------------------------------
+# Inverse-CDF sampling of a discrete delay distribution (used by the
+# onset-anchored and bridge forward simulators). Kept here — a low-level module
+# with no package imports — so both simulation.py and simulation_delay.py can
+# reuse it without an import cycle.
+# ---------------------------------------------------------------------------
+
+
+def delay_cdf(
+    weights: NDArray[np.float64], *, start: int = 1
+) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
+    """Return ``(cdf, support)`` for inverse-CDF sampling of a discrete delay.
+
+    ``weights[i]`` is proportional to the probability of a delay of
+    ``start + i`` (``support[i] = start + i``); ``cdf`` is the normalised
+    cumulative. ``start=1`` for a delay supported on ``{1, 2, ...}`` (e.g. an
+    incubation period that cannot be zero), ``start=0`` to allow a zero delay.
+    """
+    p = weights / weights.sum()
+    cdf = np.cumsum(p)
+    support = np.arange(start, start + weights.size, dtype=np.int64)
+    return cdf, support
+
+
+def sample_delay(
+    cdf: NDArray[np.float64],
+    support: NDArray[np.int64],
+    size: int,
+    rng: np.random.Generator,
+) -> NDArray[np.int64]:
+    """Draw ``size`` delays by inverse-CDF sampling from ``(cdf, support)``."""
+    u = rng.random(size)
+    idx = np.searchsorted(cdf, u, side="right")
+    np.clip(idx, 0, support.size - 1, out=idx)
+    return support[idx]

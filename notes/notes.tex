@@ -1233,4 +1233,147 @@ the N-model average \(\overline{\mathrm{PMO}}_\mathrm{avg}\) of
 \eqref{eq:pi_post_general}--\eqref{eq:pmo_avg_general}, exactly as the
 two-model SSE/SSI case of \S~\ref{sec:simulation}.
 
+% ===========================================================================
+\section{Real-time monitoring of the probability of a major outbreak}
+\label{sec:realtime}
+% ===========================================================================
+
+The estimators of \S\ref{sec:pmo_uncertain} evaluate the probability of a major
+outbreak retrospectively, conditional on a complete observed history
+$(I_0, \ldots, I_r)$.  When an outbreak is unfolding we instead want this
+probability \emph{sequentially}: at the end of each week~$w$ we condition on the
+incidence observed so far, $(I_0, \ldots, I_w)$, and report the current
+probability of a major outbreak together with the current posterior model
+probabilities.  Re-running the rejection scheme of \S\ref{sec:simulation}
+independently at every horizon is wasteful --- the probability of matching the
+whole history decays rapidly in $w$ --- so we use a bootstrap particle filter
+that reuses the hard-won early-history match.
+
+\paragraph{Bootstrap particle filter.}
+Fix a model $M$ and maintain a population of $N$ particles, each carrying the
+latent state needed to propagate the process one step: the recent incidence and,
+for the SSI model, the latent infectivities $(Y_s)$.  Initialise every particle
+at the index case $I_0$.  For $w = 1, 2, \ldots, r$:
+\begin{enumerate}
+  \item \emph{Propagate.}  Advance each particle one week under model $M$'s
+    one-step law, drawing a proposed incidence $\tilde I_w$ from
+    $\mathbb{P}_M(\,\cdot \mid I_{0:w-1})$ given the particle's state (a negative
+    binomial for SSE, a Poisson driven by the sampled infectivities for SSI).
+  \item \emph{Weight and resample.}  Retain the particles with
+    $\tilde I_w = I_w$ and resample $N$ of them with replacement to form the
+    week-$w$ population; discard the rest.
+\end{enumerate}
+The retained particles represent the distribution of the latent state given
+$(I_0, \ldots, I_w)$.  Copying each and simulating it forward freely to
+resolution --- major outbreak or extinction, exactly as in
+\S\ref{sec:simulation} --- estimates $\mathrm{PMO}_M$ conditional on the history
+to week~$w$.
+
+\paragraph{Sequential evidence and model averaging.}
+The mean matching fraction at week~$w$,
+$\widehat{\mathbb{P}}_M(I_w \mid I_{0:w-1}) = (\text{number retained})/N$, is the
+standard sequential Monte Carlo estimate of the one-step predictive probability,
+and its running product is the marginal likelihood
+$L_M(I_{1:w} \mid I_0) = \prod_{u=1}^{w} \mathbb{P}_M(I_u \mid I_{0:u-1})$ of
+\S\ref{sec:pmo_uncertain}.  Running one filter per candidate model and feeding
+these evidences through
+\eqref{eq:pi_post_general}--\eqref{eq:pmo_avg_general} yields the posterior model
+probabilities $\pi_M^\star$ and the model-averaged probability of a major
+outbreak, each tracked in real time as the outbreak unfolds.
+
+\begin{remark}
+  For the SSE and Poisson models the observed incidence already determines the
+  force of infection, so a particle carries no hidden state and the filter
+  reduces to reweighting forward simulations; the filter is essential only for
+  the SSI model, whose infectivities $(Y_s)$ remain latent.  In the large-$N$
+  limit the filter and the independent rejection estimator of
+  \S\ref{sec:simulation} coincide; the filter is preferred purely for its
+  efficiency under sequential monitoring.
+\end{remark}
+
+% ===========================================================================
+\section{Symptom-onset data: a generation-time renewal with an incubation delay}
+\label{sec:bridge}
+% ===========================================================================
+
+The models above treat the observed history as a record of \emph{infection}
+times.  Surveillance data instead record \emph{symptom onset} times, which lag
+infection by an incubation period.  A first way to reconcile the two --- and a
+bridge to the fully onset-anchored models developed in the companion notes on
+delayed transmission --- keeps the generation-time renewal of \S\ref{sec:models}
+for the transmission process and treats the incubation period purely as an
+\emph{observation} delay.
+
+Let the \emph{incubation-period} weights $\iota_a$, $a = 0, 1, 2, \ldots$ with
+$\sum_{a \geq 0} \iota_a = 1$, give the probability that an infected individual
+develops symptoms $a$ days after infection.  A zero incubation ($a = 0$: onset in
+the same week as infection) is permitted here because the generation interval
+carries no lag-0 mass ($w_s$ is supported on $s \geq 1$), so no instantaneous
+infection--onset--transmission loop can arise.  Write $J_t$ for the number of new
+infections on day~$t$.  Infections are generated exactly as in
+\S\ref{sec:models}: the force of infection is driven by past \emph{infections}
+through the generation-interval weights $w_s$,
+\begin{equation}\label{eq:bridge_foi}
+  \lambda_t = \sum_{s=1}^{\infty} w_s\, J_{t-s}
+  \quad\text{(SSE, Poisson)},
+  \qquad
+  \lambda_t = \sum_{s=1}^{\infty} w_s\, Y_{t-s},
+  \ \ Y_t \mid J_t \sim \mathrm{Gamma}(k J_t, k)
+  \quad\text{(SSI)},
+\end{equation}
+with $J_t \mid \lambda_t \sim \mathrm{NB}(\text{mean}=R_0\lambda_t,\
+\text{disp}=k\lambda_t)$ for the SSE model and
+$J_t \mid \lambda_t \sim \mathrm{Poisson}(R_0\lambda_t)$ for the SSI and Poisson
+models --- exactly the models of \S\ref{sec:sse}--\S\ref{sec:poisson} with the
+incidence $I$ relabelled as infections $J$.  Each infection is then mapped
+forward to its symptom onset through an independent incubation period: each of
+the $J_t$ infections on day~$t$ draws $A \sim (\iota_a)_{a\geq0}$ and contributes
+to the observed onset cohort $D_{t+A}$,
+\begin{equation}\label{eq:bridge_onsets}
+  D_t = \sum_{a=0}^{\infty} J^{(a)}_{t-a},
+  \qquad
+  \bigl(J^{(a)}_u\bigr)_{a\geq0} \,\big|\, J_u \sim
+  \mathrm{Multinomial}\bigl(J_u,\, (\iota_a)_{a\geq0}\bigr),
+\end{equation}
+with $J^{(a)}_u$ the number of day-$u$ infections whose symptoms begin $a$ days
+later.  Only the onset counts $D_t$ are observed; the incubation draws are
+independent of the transmission process.
+
+\paragraph{Relationship to the serial interval.}
+Here $w_s$ is the \emph{generation} interval, between the infection times of an
+infector and infectee.  An infector infected on day~$u$ has onset on $u + A$; its
+infectee, infected on $u + G$ with $G \sim w$, has onset on $u + G + A'$.  The
+observed onset-to-onset interval is $G + (A' - A)$: the generation interval plus
+the difference of two independent incubation periods, sharing the generation
+interval's mean $\mathbb{E}[w]$ but more dispersed (and possibly negative).
+Fixing $\mathbb{E}[\iota]$ at a plausible incubation period thus leaves the
+transmission dynamics of \S\ref{sec:models} unchanged while rendering the model
+observable through onsets.
+
+\paragraph{Probability of a major outbreak.}
+Given an observed onset history $D_0, \ldots, D_r$ (with $D_0 \geq 1$), the
+onsets do not determine the state needed to project forward: at the observation
+horizon a pipeline of infected-but-not-yet-symptomatic individuals, and (for SSI)
+their infectivities, is latent.  Moreover, because the generation interval is
+supported on $s \geq 1$, an index case seeded in the first observed week could
+not generate an onset until later weeks; we therefore seed a single index
+\emph{infection} one or more weeks before the first observed onset, so that its
+descendants can populate the early observed weeks.  We then estimate the
+probability of a major outbreak by the particle filter of \S\ref{sec:realtime},
+matching the observed onset cohorts $D_0, \ldots, D_r$ rather than infections.
+Because the generation interval has no lag-0 mass, each week's onset cohort is
+determined by infections up to that week --- all realised before that week's
+transmission --- so conditioning on it requires no fresh simulation.  A major
+outbreak and extinction are defined on the underlying \emph{infection} process
+exactly as in \S\ref{sec:realtime} (a single-week infection count reaching the
+threshold, or the last $L = \mathrm{len}(w)$ weeks carrying no infections), so
+only the observation step changes; the onsets enter solely through the matching.
+The sequential evidence and model averaging of \S\ref{sec:realtime} carry over
+unchanged, giving real-time onset-based monitoring.
+
+The companion notes on delayed transmission develop a fully onset-anchored
+alternative, in which transmission is referenced to the infector's own symptom
+onset --- via a time-from-onset-to-transmission distribution --- rather than to
+their infection time.
+
 \end{document}

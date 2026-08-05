@@ -81,9 +81,16 @@ from sse_ssi_pmo.extinction import (
 )
 from sse_ssi_pmo.priors import Prior
 from sse_ssi_pmo.simulation import (
+    _pmo_bridge_realtime,
+    _pmo_infection_realtime,
     _pmo_sse_sim,
     _pmo_ssi_sim_multi,
     _pmo_uncertain_sim_multi,
+)
+from sse_ssi_pmo.simulation_delay import (
+    _pmo_delay_realtime,
+    _pmo_sse_delay_sim_multi,
+    _pmo_ssi_delay_sim_multi,
 )
 
 
@@ -909,12 +916,361 @@ def pmo_ensemble(
     )
 
 
+class PmoRealtimeResult(NamedTuple):
+    """Return type of the real-time (particle-filter) PMO functions.
+
+    Shared by :func:`pmo_sse_realtime` / :func:`pmo_ssi_realtime` (infection
+    history), :func:`pmo_sse_incubation_realtime` /
+    :func:`pmo_ssi_incubation_realtime` (onset history, bridge model), and
+    :func:`pmo_sse_delay_realtime` / :func:`pmo_ssi_delay_realtime` (onset
+    history, onset-anchored model).
+
+    Each field is a length-``L`` array over the weeks of the observed
+    ``history``. ``pmo`` is the probability of a major outbreak conditional on
+    the history observed up to and including each week (``NaN`` from the week the
+    particle filter collapses, if any). ``n_matches`` / ``n_distinct`` are the
+    number of particles matching the observation before resampling and the
+    number of distinct particles after resampling (a diagnostic of particle
+    diversity); ``n_indet`` is the number of forward sims left unresolved at
+    ``t_max`` at each week. ``log_evidence`` is the running log marginal
+    likelihood of the observations under the model (the sequential Monte Carlo
+    evidence estimate); ratios of ``exp(log_evidence)`` across models yield the
+    posterior model probabilities for Bayesian model averaging.
+    """
+
+    pmo: NDArray[np.float64]
+    n_matches: NDArray[np.int64]
+    n_distinct: NDArray[np.int64]
+    n_indet: NDArray[np.int64]
+    log_evidence: NDArray[np.float64]
+
+
+def _validate_delay_weights(tost: NDArray[np.float64], inc: NDArray[np.float64]) -> None:
+    """Validate the TOST and incubation weight arrays for the onset-anchored models."""
+    for name, arr in (("tost", tost), ("inc", inc)):
+        if arr.ndim != 1 or arr.size == 0:
+            raise ValueError(f"{name} must be a non-empty 1-D array")
+        if (arr < 0.0).any():
+            raise ValueError(f"{name} must be non-negative")
+        if not arr.sum() > 0.0:
+            raise ValueError(f"{name} must have positive total mass")
+
+
+def _pmo_delay_dispatch(
+    model: str,
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    method: str,
+    kwargs: dict,
+) -> float | NDArray[np.float64]:
+    """Shared body for :func:`pmo_sse_delay` / :func:`pmo_ssi_delay`."""
+    if method != "simulation":
+        raise NotImplementedError(
+            f"pmo_{model}_delay only supports method='simulation' "
+            f"(the onset-anchored models are simulation-only), got {method!r}."
+        )
+    if np.ndim(R0) != 0 or np.ndim(k) != 0:
+        raise ValueError(f"pmo_{model}_delay: R0 and k must be scalars (no broadcasting yet)")
+    if float(R0) <= 0.0 or float(k) <= 0.0:
+        raise ValueError("R0 and k must be positive")
+    tost_arr = np.asarray(tost, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    _validate_delay_weights(tost_arr, inc_arr)
+    hist_2d, was_1d = _validate_histories(history)
+    fn = _pmo_sse_delay_sim_multi if model == "sse" else _pmo_ssi_delay_sim_multi
+    out = fn(float(R0), float(k), tost_arr, inc_arr, hist_2d, **kwargs)
+    return float(out[0]) if was_1d else out
+
+
+def pmo_sse_delay(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    method: Literal["simulation"] = "simulation",
+    **kwargs,
+) -> float | NDArray[np.float64]:
+    """Probability of major outbreak under the onset-anchored SSE model.
+
+    Symptom-onset-anchored variant of :func:`pmo_sse`: the observed ``history``
+    is symptom-onset incidence ``(D_0, D_1, ..., D_r)``, transmission is driven
+    by the TOST weights ``tost`` (indexed from lag 0), and infections are mapped
+    forward to onsets by the incubation weights ``inc`` (indexed from lag 1).
+    See ``notes/notes.tex`` §"Symptom-onset data and delayed transmission".
+
+    Estimated by rejection sampling only — the observed onsets do not determine
+    the latent incubation pipeline, so there is no closed form or seed-and-
+    continue shortcut. ``R0`` and ``k`` must be scalars.
+
+    Parameters
+    ----------
+    R0, k
+        Reproduction number and dispersion parameter (positive scalars).
+    tost
+        TOST weights ``tost[s]`` for ``s = 0, 1, ...`` (from lag 0); non-negative
+        1-D array, need not sum to exactly 1.
+    inc
+        Incubation-period weights ``inc[a-1]`` for ``a = 1, 2, ...`` (from lag 1);
+        non-negative 1-D array.
+    history
+        Observed onset incidence as a 1-D array or a 2-D ``(M, L)`` array of
+        histories (see :func:`pmo_sse` for the convention). For 2-D input all
+        rows must share the same ``D_0`` (shared rejection-sampling pass).
+    method
+        Only ``"simulation"`` is supported. Keyword arguments (``n_sims``,
+        ``threshold``, ``t_max``, ``rng``, ``batch_size``, ``max_attempts``,
+        ``show_progress``) are forwarded to the simulation backend.
+    """
+    return _pmo_delay_dispatch(
+        "sse", R0=R0, k=k, tost=tost, inc=inc, history=history, method=method, kwargs=kwargs
+    )
+
+
+def pmo_ssi_delay(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    method: Literal["simulation"] = "simulation",
+    **kwargs,
+) -> float | NDArray[np.float64]:
+    """Probability of major outbreak under the onset-anchored SSI model.
+
+    Symptom-onset-anchored variant of :func:`pmo_ssi` (see
+    :func:`pmo_sse_delay` for the shared parameter conventions). Each onset
+    cohort carries a latent aggregate infectivity ``Y_t ~ Gamma(k*D_t, k)`` and
+    new infections are ``Poisson(R0 * sum_s tost_s Y_{t-s})``. Simulation-only.
+    """
+    return _pmo_delay_dispatch(
+        "ssi", R0=R0, k=k, tost=tost, inc=inc, history=history, method=method, kwargs=kwargs
+    )
+
+
+def _pmo_delay_realtime_dispatch(
+    model: str,
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    kwargs: dict,
+) -> PmoRealtimeResult:
+    """Shared body for :func:`pmo_sse_delay_realtime` / :func:`pmo_ssi_delay_realtime`."""
+    if np.ndim(R0) != 0 or np.ndim(k) != 0:
+        raise ValueError(f"pmo_{model}_delay_realtime: R0 and k must be scalars")
+    if float(R0) <= 0.0 or float(k) <= 0.0:
+        raise ValueError("R0 and k must be positive")
+    tost_arr = np.asarray(tost, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    _validate_delay_weights(tost_arr, inc_arr)
+    hist = np.asarray(history, dtype=np.int64)
+    if hist.ndim != 1 or hist.size == 0:
+        raise ValueError("history must be a non-empty 1-D onset history")
+    if hist.min() < 0:
+        raise ValueError("history entries must be non-negative")
+    if hist[0] < 1:
+        raise ValueError("history[0] (index onset) must be >= 1")
+    out = _pmo_delay_realtime(model, float(R0), float(k), tost_arr, inc_arr, hist, **kwargs)
+    return PmoRealtimeResult(**out)
+
+
+def pmo_sse_delay_realtime(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    **kwargs,
+) -> PmoRealtimeResult:
+    """Real-time onset-anchored SSE PMO across the weeks of an observed history.
+
+    For each week of the observed onset ``history``, estimates the probability
+    of a major outbreak conditional on the onsets seen up to and including that
+    week, via a bootstrap particle filter over the latent incubation pipeline
+    (see ``notes/notes.tex`` and :func:`pmo_sse_delay`). Far more efficient than
+    re-running rejection sampling per week. ``R0`` and ``k`` must be scalars.
+
+    Parameters
+    ----------
+    R0, k, tost, inc
+        As in :func:`pmo_sse_delay`.
+    history
+        Observed weekly onset incidence as a 1-D array ``(D_0, D_1, ..., D_r)``.
+    **kwargs
+        Forwarded to the particle-filter backend: ``n_particles``,
+        ``threshold``, ``t_max``, ``rng``.
+
+    Returns
+    -------
+    PmoRealtimeResult
+        Named tuple ``(pmo, n_matches, n_distinct, n_indet)``, each length
+        ``len(history)`` — see :class:`PmoRealtimeResult`.
+    """
+    return _pmo_delay_realtime_dispatch(
+        "sse", R0=R0, k=k, tost=tost, inc=inc, history=history, kwargs=kwargs
+    )
+
+
+def pmo_ssi_delay_realtime(
+    *,
+    R0: float,
+    k: float,
+    tost: ArrayLike,
+    inc: ArrayLike,
+    history: ArrayLike,
+    **kwargs,
+) -> PmoRealtimeResult:
+    """Real-time onset-anchored SSI PMO across the weeks of an observed history.
+
+    SSI counterpart of :func:`pmo_sse_delay_realtime` (see it and
+    :func:`pmo_ssi_delay` for conventions).
+    """
+    return _pmo_delay_realtime_dispatch(
+        "ssi", R0=R0, k=k, tost=tost, inc=inc, history=history, kwargs=kwargs
+    )
+
+
+def _validate_realtime_scalars(model: str, R0: float, k: float, label: str) -> None:
+    if np.ndim(R0) != 0 or np.ndim(k) != 0:
+        raise ValueError(f"{label}: R0 and k must be scalars")
+    if float(R0) <= 0.0 or float(k) <= 0.0:
+        raise ValueError("R0 and k must be positive")
+
+
+def _validate_realtime_weights(name: str, arr: NDArray[np.float64]) -> None:
+    if arr.ndim != 1 or arr.size == 0:
+        raise ValueError(f"{name} must be a non-empty 1-D array")
+    if (arr < 0.0).any():
+        raise ValueError(f"{name} must be non-negative")
+    if not arr.sum() > 0.0:
+        raise ValueError(f"{name} must have positive total mass")
+
+
+def _validate_realtime_history(history: ArrayLike) -> NDArray[np.int64]:
+    hist = np.asarray(history, dtype=np.int64)
+    if hist.ndim != 1 or hist.size == 0:
+        raise ValueError("history must be a non-empty 1-D array")
+    if hist.min() < 0:
+        raise ValueError("history entries must be non-negative")
+    if hist[0] < 1:
+        raise ValueError("history[0] must be >= 1")
+    return hist
+
+
+def pmo_sse_realtime(
+    *, R0: float, k: float, w: ArrayLike, history: ArrayLike, **kwargs
+) -> PmoRealtimeResult:
+    """Real-time infection-anchored SSE PMO across the weeks of an observed history.
+
+    "Naive" real-time monitoring: the observed ``history`` is weekly *infection*
+    incidence ``(I_0, I_1, ..., I_r)`` (case dates taken as infection times). For
+    each week, estimates the probability of a major outbreak conditional on the
+    incidence seen so far, via a bootstrap particle filter over the SSE model
+    (see ``notes/notes.tex`` §"Real-time monitoring"). ``R0`` and ``k`` must be
+    scalars; ``w`` are the serial-interval weights (1-indexed, lag >= 1).
+
+    ``**kwargs`` (``n_particles``, ``threshold``, ``t_max``, ``rng``) are
+    forwarded to the particle-filter backend. Returns a
+    :class:`PmoRealtimeResult`.
+    """
+    _validate_realtime_scalars("sse", R0, k, "pmo_sse_realtime")
+    w_arr = np.asarray(w, dtype=np.float64)
+    _validate_realtime_weights("w", w_arr)
+    hist = _validate_realtime_history(history)
+    return PmoRealtimeResult(
+        **_pmo_infection_realtime("sse", float(R0), float(k), w_arr, hist, **kwargs)
+    )
+
+
+def pmo_ssi_realtime(
+    *, R0: float, k: float, w: ArrayLike, history: ArrayLike, **kwargs
+) -> PmoRealtimeResult:
+    """Real-time infection-anchored SSI PMO across the weeks of an observed history.
+
+    SSI counterpart of :func:`pmo_sse_realtime`; the particle filter carries the
+    latent per-cohort infectivities ``Y_t``.
+    """
+    _validate_realtime_scalars("ssi", R0, k, "pmo_ssi_realtime")
+    w_arr = np.asarray(w, dtype=np.float64)
+    _validate_realtime_weights("w", w_arr)
+    hist = _validate_realtime_history(history)
+    return PmoRealtimeResult(
+        **_pmo_infection_realtime("ssi", float(R0), float(k), w_arr, hist, **kwargs)
+    )
+
+
+def pmo_sse_incubation_realtime(
+    *, R0: float, k: float, w: ArrayLike, inc: ArrayLike, history: ArrayLike, **kwargs
+) -> PmoRealtimeResult:
+    """Real-time SSE PMO over an observed onset history under the bridge model.
+
+    Infections follow the same generation-time SSE renewal as
+    :func:`pmo_sse_realtime` (weights ``w``, lag >= 1), but are observed only
+    through symptom onsets obtained by an independent incubation delay ``inc``
+    (indexed from lag 0). The observed ``history`` is weekly onset incidence. A
+    single index infection is seeded ``seed_lead`` weeks before the first
+    observed onset (``seed_lead`` defaults to 1); a major outbreak is defined on
+    the infection process. See ``notes/notes.tex`` §"Symptom-onset data: a
+    generation-time renewal with an incubation delay".
+
+    ``**kwargs`` (``seed_lead``, ``n_particles``, ``threshold``, ``t_max``,
+    ``rng``) are forwarded to the backend. Returns a :class:`PmoRealtimeResult`.
+    """
+    _validate_realtime_scalars("sse", R0, k, "pmo_sse_incubation_realtime")
+    w_arr = np.asarray(w, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    _validate_realtime_weights("w", w_arr)
+    _validate_realtime_weights("inc", inc_arr)
+    hist = _validate_realtime_history(history)
+    return PmoRealtimeResult(
+        **_pmo_bridge_realtime("sse", float(R0), float(k), w_arr, inc_arr, hist, **kwargs)
+    )
+
+
+def pmo_ssi_incubation_realtime(
+    *, R0: float, k: float, w: ArrayLike, inc: ArrayLike, history: ArrayLike, **kwargs
+) -> PmoRealtimeResult:
+    """Real-time SSI PMO over an observed onset history under the bridge model.
+
+    SSI counterpart of :func:`pmo_sse_incubation_realtime`; the particle filter
+    carries the latent per-infection-cohort infectivities ``Y_t``.
+    """
+    _validate_realtime_scalars("ssi", R0, k, "pmo_ssi_incubation_realtime")
+    w_arr = np.asarray(w, dtype=np.float64)
+    inc_arr = np.asarray(inc, dtype=np.float64)
+    _validate_realtime_weights("w", w_arr)
+    _validate_realtime_weights("inc", inc_arr)
+    hist = _validate_realtime_history(history)
+    return PmoRealtimeResult(
+        **_pmo_bridge_realtime("ssi", float(R0), float(k), w_arr, inc_arr, hist, **kwargs)
+    )
+
+
 __all__ = [
     "PmoEnsembleResult",
+    "PmoRealtimeResult",
     "PmoUncertainResult",
     "pmo_ensemble",
     "pmo_poisson",
     "pmo_sse",
+    "pmo_sse_delay",
+    "pmo_sse_delay_realtime",
+    "pmo_sse_incubation_realtime",
+    "pmo_sse_realtime",
     "pmo_ssi",
+    "pmo_ssi_delay",
+    "pmo_ssi_delay_realtime",
+    "pmo_ssi_incubation_realtime",
+    "pmo_ssi_realtime",
     "pmo_uncertain",
 ]

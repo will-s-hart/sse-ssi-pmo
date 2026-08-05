@@ -22,24 +22,42 @@ See ``notes/notes.tex`` for the mathematical derivation. This package exposes:
   MCMC or rejection sampling.
 * :func:`simulate_sse`, :func:`simulate_ssi`, :func:`simulate_poisson` —
   single forward trajectories.
+* :func:`pmo_sse_realtime` / :func:`pmo_ssi_realtime` — real-time (per-week)
+  PMO over an observed infection history via a bootstrap particle filter;
+  :func:`pmo_sse_incubation_realtime` / :func:`pmo_ssi_incubation_realtime` —
+  the same generation-time renewal observed through symptom onsets (an
+  independent incubation delay); :func:`pmo_sse_delay_realtime` /
+  :func:`pmo_ssi_delay_realtime` — the onset-anchored (TOST) variant. All
+  return a :class:`PmoRealtimeResult`.
 """
 
 from sse_ssi_pmo.inference import fit_sse, fit_ssi
 from sse_ssi_pmo.pmo import (
     PmoEnsembleResult,
+    PmoRealtimeResult,
     PmoUncertainResult,
     pmo_ensemble,
     pmo_poisson,
     pmo_sse,
+    pmo_sse_delay,
+    pmo_sse_delay_realtime,
+    pmo_sse_incubation_realtime,
+    pmo_sse_realtime,
     pmo_ssi,
+    pmo_ssi_delay,
+    pmo_ssi_delay_realtime,
+    pmo_ssi_incubation_realtime,
+    pmo_ssi_realtime,
     pmo_uncertain,
 )
 from sse_ssi_pmo.priors import Prior
 from sse_ssi_pmo.serial_interval import cumulative, discretise, discretise_gamma
 from sse_ssi_pmo.simulation import simulate_poisson, simulate_sse, simulate_ssi
+from sse_ssi_pmo.simulation_delay import simulate_sse_delay, simulate_ssi_delay
 
 __all__ = [
     "PmoEnsembleResult",
+    "PmoRealtimeResult",
     "PmoUncertainResult",
     "Prior",
     "cumulative",
@@ -50,9 +68,19 @@ __all__ = [
     "pmo_ensemble",
     "pmo_poisson",
     "pmo_sse",
+    "pmo_sse_delay",
+    "pmo_sse_delay_realtime",
+    "pmo_sse_incubation_realtime",
+    "pmo_sse_realtime",
     "pmo_ssi",
+    "pmo_ssi_delay",
+    "pmo_ssi_delay_realtime",
+    "pmo_ssi_incubation_realtime",
+    "pmo_ssi_realtime",
     "pmo_uncertain",
     "simulate_poisson",
     "simulate_sse",
+    "simulate_sse_delay",
     "simulate_ssi",
+    "simulate_ssi_delay",
 ]
